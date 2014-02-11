@@ -1,4 +1,4 @@
 simpletorrent
 =============
 
-A lightweight web-based torrent client designed for headless operation
+A web-ui based torrent client with responsive design

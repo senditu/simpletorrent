@@ -1,0 +1,508 @@
+﻿<!--
+//
+//  simple.htm
+//
+//  Copyright (C) 2014  senditu <https://github.com/senditu/simpletorrent>
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Affero General Public License as
+//  published by the Free Software Foundation, either version 3 of the
+//  License, or (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU Affero General Public License for more details.
+//
+//  You should have received a copy of the GNU Affero General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+-->
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head id="theHead">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <title>simpletorrent - a simple web-based torrent client</title>
+    <link href='//fonts.googleapis.com/css?family=Source+Sans+Pro:400,700|Open+Sans:300italic,400,300,700' rel='stylesheet' type='text/css' />
+    <link rel="stylesheet" type="text/css" href="css/semantic.min.css" />
+    <script src="javascript/jquery-2.1.0.min.js"></script>
+    <script src="javascript/moment-with-langs.min.js"></script>
+    <script src="javascript/semantic.min.js"></script>
+
+    <link rel="stylesheet" type="text/css" href="css/main.css" />
+</head>
+<body id="main">
+    <form id="form1">
+        <div class="ui page grid">
+            <div class="row login-box">
+                <div class="column">
+                    <div id="st-messagecontainer">
+                        <div class="ui icon message banner red" id="st-harderror" style="display:none">
+                            <i class="icon bug"></i>
+                            <div class="content">
+                                <div class="header">Connection Issues</div>
+                                <span>We seem to be unable to connect to the simpletorrent server.</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ui segment">
+                        <div style="vertical-align:middle;text-align:center">
+                            <div class="st-logo"></div>
+                            <h3 class="ui header">simpletorrent</h3>
+                        </div>
+                    </div>
+                    <div class="ui fluid form segment">
+
+                        <div class="ui segment basic" id="st-quickbuttonsegment">
+                            <div class="ui teal buttons">
+                                <div class="ui button" id="st-addtorrenturlbutton">
+                                    <i class="add icon"></i><span>Add</span>
+                                </div>
+                                <div class="ui teal floating dropdown icon button">
+                                    <i class="dropdown icon"></i>
+                                    <div class="menu">
+                                        <div class="item"><i class="edit icon"></i>Edit Post</div>
+                                        <div class="item"><i class="delete icon"></i>Remove Post</div>
+                                        <div class="item"><i class="hide icon"></i>Hide Post</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="st-torrentcontainer">
+
+                        </div>
+                        <div class="ui basic segment" style="padding: 0">
+                            <div class="ui tags" style="float:right;">
+                                <div class="ui black label">
+                                    <i class="info icon"></i>
+                                    <span id="st-dhtcount">DHT: nodes</span>
+                                </div>
+                                <div class="ui black label">
+                                    <i class="info icon"></i>
+                                    <span id="st-freespace">5.2 TB</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="column"></div>
+            </div>
+        </div>
+        <div class="ui modal" id="st-addtorrenturlmodal">
+            <i class="close icon"></i>
+            <div class="header">
+                <i class="add icon"></i>Add Torrents
+            </div>
+            <div class="content">
+                <div class="left" style="text-align:center">
+                    <div class="segment ui">
+                        <div class="st-logo"></div>
+                        <h3>simpletorrent</h3>
+                    </div>
+                </div>
+                <div class="right">
+                    <div class="ui form">
+                        <div class="field">
+                            <textarea id="st-addtorrenturlmodal-textarea"></textarea>
+                            <label style="padding-top: 0.5em">Please include one link per line. Magnet links and torrent urls accepted.</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="actions">
+                <div class="ui button black">Cancel</div>
+                <div class="ui button right labeled icon positive">Add Torrents<i class="checkmark icon"></i></div>
+            </div>
+        </div>
+        <div class="ui modal" id="st-deletetorrentmodal">
+            <i class="close icon"></i>
+            <div class="header">
+                <i class="delete icon"></i>
+                <span id="st-deletetorrentmodal-title">Delete Torrent — </span>
+            </div>
+            <div class="content">
+                <p>Do you wish to remove this torrent?</p>
+            </div>
+            <div class="actions">
+                <div class="ui button black">Cancel</div>
+                <div class="ui button right labeled icon orange" id="st-deletetorrentmodal-deleteall-button">Delete Torrent &amp; Data<i class="delete icon"></i></div>
+                <div class="ui button right labeled icon positive" id="st-deletetorrentmodal-delete-button">Delete Torrent<i class="checkmark icon"></i></div>
+            </div>
+        </div>
+    </form>
+    <script>
+        var lastCheck = new Date();
+        var torrentTarget = '';
+
+        $(document).ready(function () {
+            attemptServerPingWithTimeout();
+
+            $('.ui.dropdown').dropdown();
+
+            $('.message .close').click(function() {
+                $(this).closest('.message').css({'min-height': '0', 'overflow': 'hidden' })
+                .animate({ opacity:0, height:0, margin:0, padding:0 },
+                        500, function () { $(this).remove() });
+            });
+
+            $('#st-addtorrenturlmodal')
+				.modal('setting', {
+				    'transition': 'fade up',
+				    onApprove: function () {
+				        postServerData("add-torrent-links:" + $('#st-addtorrenturlmodal-textarea').val());
+				    },
+				    onHide: function () {
+				        $('#st-addtorrenturlmodal-textarea').val('');
+				    }
+				})
+				.modal('attach events', '#st-addtorrenturlbutton', 'show');
+
+            $('#st-deletetorrentmodal')
+                .modal('setting', {
+                    'transition': 'fade up'
+                });
+
+            $('#st-deletetorrentmodal-delete-button').click(function () {
+                if (torrentTarget.length > 0) {
+                    $('#st-torrent-' + torrentTarget).dimmer('show');
+                    postServerData('delete-torrent:' + torrentTarget);
+                }
+            });
+
+            $('#st-deletetorrentmodal-deleteall-button').click(function () {
+                if (torrentTarget.length > 0) {
+                    $('#st-torrent-' + torrentTarget).dimmer('show');
+                    postServerData('delete-torrent-and-data:' + torrentTarget);
+                }
+            });
+        });
+        
+        function postServerData(postData) {
+            $.ajax({
+                type: "POST",
+                dataType: "text",
+                url: "simple-action.potato",
+                data: postData,
+                success: function (text) {
+                    attemptServerPing(false);
+                }
+            });
+        }
+        
+        function attemptServerPingWithTimeout() {
+            attemptServerPing(true);
+        }
+
+        function attemptServerPing(toSetTimeout) {
+            $.ajax({
+                type: "GET",
+                url: "simple.potato",
+                cache: false,
+                dataType: "xml",
+                timeout: 1000,
+                success: function (xml) {
+                    repaint(xml);
+                },
+                error: function () {
+                    //Only display connection error if it's been 25 sec or longer
+                    if (new Date() - lastCheck > 25000) {
+                        $('#st-harderror').fadeIn();
+
+                        $('.st-torrent-general').each(function () {
+                            recolorItem($(this).find('.st-progress-parent'), 'black');
+                            recolorItem($(this).find('.st-name-label'), 'black');
+                        });
+                    }
+                },
+                complete: function () {
+                    if (toSetTimeout)
+                        setTimeout(attemptServerPingWithTimeout, 5000);
+                }
+            });
+        }
+
+        function repaint(xml) {
+            lastCheck = new Date();
+
+            $('#st-harderror').fadeOut();
+
+            var dht = $(xml).find('dht').text();
+            $('#st-dhtcount').html('DHT: ' + dht + ' nodes');
+
+            var freespace = $(xml).find('freespace').text();
+            $('#st-freespace').html(humanFileSize(freespace));
+
+            var infohashes = $(xml).find('infohash');
+
+            //Find Messages
+
+            $(xml).find('message').each(function () {
+                var message = $(this);
+
+                var type = message.find('type').text().toLowerCase();
+                var id = message.find('id').text();
+                var payload = message.find('payload').text();
+                var title = message.find('title').text();
+                var mType = 'info';
+
+                if (type == 'exception') {
+                    mType = 'red';
+                }
+
+                var m =
+                    '<div class="ui text message ' + mType + ' icon banner" id="st-message-' + id + '">'
+                        + '<i class="close icon"></i>'
+                        + '<i class="icon info letter"></i>'
+                        + '<div class="content">'
+                            + '<div class="header">' + $('<div/>').text(title).html() + '</div>'
+                            + '<div class="ui instructive segment">' + $('<div/>').text(payload).html() + '</div>'
+                        + '</div>'
+                    + '</div>';
+
+                $('#st-messagecontainer').append(m);
+
+                $('#st-message-' + id + ' .close').click(function () {
+
+                    $(this).closest('.message').find('*').css({ 'min-height': '0', 'overflow': 'hidden' })
+                    .animate({ opacity: 0, height: 0, margin: 0, padding: 0 },
+                            500, function () { });
+
+                    $(this).closest('.message').css({ 'min-height': '0', 'overflow': 'hidden' })
+                    .animate({ opacity: 0, height: 0, margin: 0, padding: 0 },
+                            500, function () { $(this).remove() });
+                });
+            });
+
+            //Delete & Clean Old Torrents
+            $('.st-torrent-general').each(function () {
+                var id = $(this).attr('id');
+                //st-torrent-ETC
+                id = id.substring(11, id.length);
+                var found = false;
+
+                infohashes.each(function () {
+                    if (id == $(this).text()) {
+                        found = true;
+                        return false;
+                    }
+                });
+
+                if (!found) {
+                    $(this).remove();
+                }
+            });
+
+            //Add & Update New Torrents
+            $(xml).find('torrent').each(function () {
+                var state = $(this).find('state').text().toLowerCase();
+                var name = $(this).find('name').text();
+                var metadataMode = $(this).find('name').attr('MetaDataMode') != null;
+                var size = $(this).find('size').text();
+                var progress = $(this).find('progress').text();
+                var download = $(this).find('download').text();
+                var upload = $(this).find('upload').text();
+                var infohash = $(this).find("infohash").text();
+                var starttime = $(this).find('starttime').text();
+                var starttimeago = $(this).find('starttimeago').text();
+
+                if (!$('#st-torrent-' + infohash).exists()) {
+                    var html =
+                        '<div class="ui top attached progress blue striped st-progress-parent">' +
+                            '<div class="bar st-progress" style="width:0%;top:0"></div>' +
+                        '</div>' +
+                        '<div class="ui attached segment">' +
+                            '<div class="ui right red corner label"><i class="heart icon"></i></div>' +
+                            '<div class="ui teal ribbon label st-name-label">' +
+                                '<div class="ui inline dropdown">' +
+                                    '<i class="icon setting" style="vertical-align:middle;margin-right:5px;cursor:pointer"></i>' +
+                                    '<div class="menu">' +
+                                        '<div class="item st-removetorrent-button"><i class="delete icon"></i>Remove Torrent</div>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<span class="st-name"></span>' +
+                                '<span id="st-torrent-' + infohash + '-name" style="display:none" class="st-name-hidden"></span>' +
+                            '</div>' +
+                            '<div class="ui basic segment" style="padding: 0">' +
+                                '<div class="ui compact menu" style="margin-left: 1.5rem;">' +
+                                    '<a class="item">' +
+                                        '<i class="icon file outline"></i>' +
+                                        '<span class="st-filesize"></span>' +
+                                    '</a>' +
+                                    '<a class="item">' +
+                                        '<i class="icon time"></i>' +
+                                        '<span class="st-eta"></span>' +
+                                    '</a>' +
+                                    '<a class="item">' +
+                                        '<i class="icon cloud"></i>' +
+                                        '<span class="st-speed"></span>' +
+                                    '</a>' +
+                                    '<a class="item">' +
+                                        '<i class="icon heart"></i>' +
+                                        'Health: OK' +
+                                    '</a>' +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="ui basic segment" style="padding: 0">' +
+                                '<div class="ui added" style="float:left;">' +
+                                    '<div class="ui black label">' +
+                                        '<i class="forward mail icon"></i>' +
+                                        '<span class="st-start-time"></span>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<div class="ui tags" style="float:right;">' +
+                                    '<a class="ui teal label"> simple </a>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="ui bottom attached progress blue striped st-progress-parent">' +
+                            '<div class="bar st-progress" style="width:0%;"></div>' +
+                        '</div>' +
+                        '<div class="ui dimmer" style="border-radius:7px">' +
+                            '<div class="content">' +
+                                '<div class="center">' +
+                                    '<h3 class="ui inverted icon header">' +
+                                        '<i class="icon circular inverted teal remove"></i>' +
+                                        '<span style="text-shadow: 0 0 1px rgba(255,255,255,0.3);">Stopping Torrent...</span>' +
+                                    '</h3>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>';
+
+                    var torrentHTML = '<div id="st-torrent-' + infohash + '" class="st-torrent-general dimmable">' + html + '</div>'
+                        + '<div class="separator"></div>';
+
+                    $('#st-torrentcontainer').append(torrentHTML);
+
+                    $('#st-torrent-' + infohash + ' .ui.dropdown').dropdown();
+
+                    $('#st-torrent-' + infohash + ' .st-removetorrent-button').click(function () {
+                        torrentTarget = infohash;
+                        $('#st-deletetorrentmodal-title').text('Delete Torrent — ' + $('#st-torrent-' + infohash + '-name').text());
+                        $('#st-deletetorrentmodal').modal('show');
+                        $('#st-torrent-' + infohash + ' .st-removetorrent-button').removeClass('active');
+                    });
+                }
+
+                var torrent = $('#st-torrent-' + infohash);
+                var stProgress = Math.floor(progress);
+
+                var stateAnnounce = '';
+
+                if (state == 'hashing') {
+                    stateAnnounce = 'Hashing';
+                    recolorItem(torrent.find('.st-progress-parent'), 'purple');
+                    recolorItem(torrent.find('.st-name-label'), 'purple');
+                } else if (state == 'seeding') {
+                    recolorItem(torrent.find('.st-progress-parent'), 'green');
+                    recolorItem(torrent.find('.st-name-label'), 'green');
+                } else if (state == 'stopping') {
+                    recolorItem(torrent.find('.st-progress-parent'), 'black');
+                    recolorItem(torrent.find('.st-name-label'), 'black');
+                } else {
+                    recolorItem(torrent.find('.st-progress-parent'), 'blue');
+                    recolorItem(torrent.find('.st-name-label'), 'teal');
+                }
+
+                torrent.find('.st-progress').css('width', stProgress + '%');
+
+                if (metadataMode) {
+                    torrent.find('.st-name').text('magnet — waiting for dht network');
+                    torrent.find('.st-name-hidden').text('Magnet link (not yet downloaded)');
+                } else {
+                    torrent.find('.st-name-hidden').text(name);
+
+                    if (state == 'seeding') {
+                        torrent.find('.st-name').text('seeding — ' + name);
+                    } else if (stateAnnounce.length == 0) {
+                        torrent.find('.st-name').text(stProgress + '% — ' + name);
+                    } else {
+                        torrent.find('.st-name').text(stateAnnounce + ' (' + stProgress + '%) — ' + name);
+                    }
+                }
+
+                if (size < 0) {
+                    torrent.find('.st-filesize').text('Size: Unknown');
+                } else {
+                    torrent.find('.st-filesize').text('Size: ' + humanFileSize(size).toUpperCase());
+                }
+
+                var downloadRead = humanFileSize(download) + '/s';
+                var uploadRead = humanFileSize(upload) + '/s';
+
+                var speedRead = 'Speed: ' + downloadRead + ' down, ' + uploadRead + ' up';
+
+                if (progress == 100) {
+                    torrent.find('.st-eta').text('ETA: Completed');
+                } else {
+                    if (download == 0) {
+                        torrent.find('.st-eta').text('ETA: ?');
+                    } else {
+                        torrent.find('.st-eta').text('ETA: ' + humanReadableTime(((1 - (progress / 100)) * size) / download));
+                    }
+                }
+
+                if (starttime == null) {
+                    torrent.find('.st-start-time').text('N/A');
+                } else {
+                    torrent.find('.st-start-time').text(humanDuration(starttimeago * -1));
+                }
+
+                torrent.find('.st-speed').text(speedRead);
+            });
+        }
+
+        function recolorItem(item, color) {
+            item.each(function () {
+                var me = $(this);
+
+                if (!me.is('.' + color)) {
+                    me.removeClass('teal');
+                    me.removeClass('blue');
+                    me.removeClass('purple');
+                    me.removeClass('green');
+                    me.removeClass('black');
+                    me.addClass(color);
+                }
+            });
+        }
+
+        jQuery.fn.exists = function () { return this.length > 0; }
+
+        function humanDuration(miliseconds) {
+            //2/4/2014 11:01 AM
+            //return moment().utc(jsTicks).format();
+            return moment.duration(miliseconds).humanize(true);
+        }
+
+        function humanFileSize(bytes) {
+            var thresh = 1024;
+            if (bytes < thresh) return bytes + ' b';
+            var units = ['kb', 'mb', 'gb', 'tb', 'pb', 'eb', 'zb', 'yb'];
+            var u = -1;
+            do {
+                bytes /= thresh;
+                ++u;
+            } while (bytes >= thresh);
+            return bytes.toFixed(1) + ' ' + units[u];
+        }
+
+        function humanReadableTime(seconds) {
+            var numyears = +(seconds / 31536000).toFixed(1);
+            var numdays = +(seconds / 864000).toFixed(1);
+            var numhours = +(seconds / 3600).toFixed(1);
+            var numminutes = +(seconds / 60).toFixed(1);
+
+            if (numyears >= 1) return numyears + ' year' + (numyears == 1 ? '' : 's');
+            if (numdays >= 1) return numdays + ' day' + (numdays == 1 ? '' : 's');
+            if (numhours >= 1) return numhours + ' hour' + (numhours == 1 ? '' : 's');
+            if (numminutes >= 1) return numminutes + ' minute' + (numminutes == 1 ? '' : 's');
+            return '< 1 minute';
+        }
+
+    </script>
+</body>
+</html>
