@@ -39,7 +39,7 @@
                 <div class="column">
                     <div id="st-messagecontainer">
                         <div class="ui icon message banner red" id="st-harderror" style="display:none">
-                            <i class="icon bug"></i>
+                            <i class="icon bolt"></i>
                             <div class="content">
                                 <div class="header">Connection Issues</div>
                                 <span>We seem to be unable to connect to the simpletorrent server.</span>
@@ -67,6 +67,13 @@
                                         <div class="item"><i class="hide icon"></i>Hide Post</div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div class="ui message" id="st-notorrentsmessage" style="text-align:center">
+                            <div class="content">
+                                <div class="header">simpletorrent</div>
+                                <span>There are currently no torrents added to the queue.</span>
                             </div>
                         </div>
 
@@ -239,7 +246,6 @@
             var infohashes = $(xml).find('infohash');
 
             //Find Messages
-
             $(xml).find('message').each(function () {
                 var message = $(this);
 
@@ -296,8 +302,12 @@
                 }
             });
 
+            var foundTorrents = false;
+
             //Add & Update New Torrents
             $(xml).find('torrent').each(function () {
+                foundTorrents = true;
+
                 var state = $(this).find('state').text().toLowerCase();
                 var name = $(this).find('name').text();
                 var metadataMode = $(this).find('name').attr('MetaDataMode') != null;
@@ -453,6 +463,16 @@
 
                 torrent.find('.st-speed').text(speedRead);
             });
+
+            if (!foundTorrents) {
+                if (!$('#st-notorrentsmessage').is(':visible')) {
+                    $('#st-notorrentsmessage').show();
+                }
+            } else {
+                if ($('#st-notorrentsmessage').is(':visible')) {
+                    $('#st-notorrentsmessage').hide();
+                }
+            }
         }
 
         function recolorItem(item, color) {

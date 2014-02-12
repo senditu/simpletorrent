@@ -208,6 +208,7 @@ namespace simpletorrent
 
                         if (ti.ToRemove == "delete-torrent-and-data")
                         {
+                            System.Threading.Thread.Sleep(200);
                             if (Directory.Exists(tm.SavePath + "\\" + tm.Torrent.Name))
                             {
                                 Directory.Delete(tm.SavePath + "\\" + tm.Torrent.Name, true);
