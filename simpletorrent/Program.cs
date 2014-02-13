@@ -25,6 +25,8 @@ using System.Text;
 using System.Threading.Tasks;
 using System.IO;
 using System.Threading;
+using System.Net.Sockets;
+using System.Web;
 
 using MonoTorrent.Common;
 using MonoTorrent.Client;
@@ -40,8 +42,6 @@ using uhttpsharp.Handlers;
 using uhttpsharp.Headers;
 using uhttpsharp.Listeners;
 using uhttpsharp.RequestProviders;
-using System.Net.Sockets;
-using System.Web;
 
 namespace simpletorrent
 {
@@ -49,21 +49,36 @@ namespace simpletorrent
     {
         static void Main(string[] args)
         {
-            Program prog = new Program();
-            prog.Start();
-            prog.Stop();
+            try
+            {
+                Program prog = new Program();
+                prog.Start();
+                prog.Stop();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+                Console.WriteLine("==============================\n");
+                Console.WriteLine("Message: {0}", ex.Message);
+                Console.ReadLine();
+            }
         }
 
         ClientEngine engine;
         List<TorrentManager> torrents;
         List<SimpleMessage> messages;
+        SimpleConfiguration config;
 
         string dhtNodeFile;
         string torrentsPath;
         string fastResumeFile;
         string downloadsPath;
+        string sslCertificatePath;
+        bool useECDSA = false;
         DriveInfo downloadsPathDrive;
         TorrentSettings torrentDefaults;
+
+        readonly string VERSION = "mwras";
 
         Dictionary<string, TorrentInformation> torrentInformation = new Dictionary<string, TorrentInformation>();
 
@@ -73,11 +88,19 @@ namespace simpletorrent
             torrents = new List<TorrentManager>();
             messages = new List<SimpleMessage>();
 
-            string basePath = Environment.CurrentDirectory;
-            dhtNodeFile = Path.Combine(basePath, "DhtNodes");
-            torrentsPath = Path.Combine(basePath, @"L:\simpletorrent\Torrents");
+            Console.WriteLine("simpletorrent: version {0}", VERSION);
+            Console.WriteLine("simpletorrent: Reading configuration file (simple.cfg)...");
+
+            config = new SimpleConfiguration("simple.cfg");
+            string basePath = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location);
+            Console.WriteLine("simpletorrent: BasePath (derived) {0}", basePath);
+            
+            torrentsPath = Path.GetFullPath(config.GetValue("TorrentPath", Path.Combine(basePath, "Torrents")));
+            downloadsPath = Path.GetFullPath(config.GetValue("DownloadPath", Path.Combine(basePath, "Downloads")));
+            sslCertificatePath = Path.GetFullPath(config.GetValue("SslCertificatePath", Path.Combine(basePath, "simple.pfx")));
+            useECDSA = config.HasValue("SslCertificateECDSA");
             fastResumeFile = Path.Combine(torrentsPath, "fastresume.data");
-            downloadsPath = Path.Combine(basePath, @"L:\simpletorrent\Downloads");
+            dhtNodeFile = Path.Combine(torrentsPath, "dht.data");
             downloadsPathDrive = null;
 
             foreach (var drive in DriveInfo.GetDrives())
@@ -90,14 +113,27 @@ namespace simpletorrent
                 }
             }
 
-            EngineSettings engineSettings = new EngineSettings(downloadsPath, 6888);
+            Console.WriteLine("simpletorrent: TorrentPath {0}", torrentsPath);
+            Console.WriteLine("simpletorrent: DownloadPath {0}", downloadsPath);
+            Console.WriteLine("simpletorrent: DownloadRootPath (derived) {0}", downloadsPathDrive);
+            Console.WriteLine("simpletorrent: SslCertificatePath {0}", sslCertificatePath);
+            Console.WriteLine("simpletorrent: SslCertificateECDSA {0}", useECDSA ? "Yes" : "No");
+
+            int? torrentListenPort = config.GetValueInt("TorrentListenPort");
+
+            if (!torrentListenPort.HasValue)
+            {
+                throw new SimpleTorrentException("Configuration does not have a proper 'TorrentListenPort' value defined.", null);
+            }
+
+            EngineSettings engineSettings = new EngineSettings(downloadsPath, torrentListenPort.Value);
             engineSettings.PreferEncryption = true;
-            engineSettings.AllowedEncryption = EncryptionTypes.RC4Full;
+            engineSettings.AllowedEncryption = config.HasValue("RequireProtocolEncryption") ? EncryptionTypes.RC4Full : EncryptionTypes.All;
             engineSettings.GlobalMaxConnections = 500;
 
             torrentDefaults = new TorrentSettings(4, 500, 0, 0);
             engine = new ClientEngine(engineSettings);
-            engine.ChangeListenEndpoint(new IPEndPoint(IPAddress.Any, 6888));
+            engine.ChangeListenEndpoint(new IPEndPoint(IPAddress.Any, torrentListenPort.Value));
 
             byte[] nodes = null;
             try
@@ -106,10 +142,10 @@ namespace simpletorrent
             }
             catch
             {
-                Console.WriteLine("No existing dht nodes could be loaded");
+                Console.WriteLine("simpletorrent: No existing dht nodes could be loaded");
             }
 
-            DhtListener dhtListner = new DhtListener(new IPEndPoint(IPAddress.Any, 6888));
+            DhtListener dhtListner = new DhtListener(new IPEndPoint(IPAddress.Any, torrentListenPort.Value));
             DhtEngine dht = new DhtEngine(dhtListner);
             engine.RegisterDht(dht);
             dhtListner.Start();
@@ -131,7 +167,6 @@ namespace simpletorrent
                 {
                     TorrentManager tm = new TorrentManager(t, downloadsPath, torrentDefaults);
                     engine.Register(tm);
-                    SetupTorrent(tm);
                 }
             }
 
@@ -147,9 +182,51 @@ namespace simpletorrent
 
             using (var httpServer = new HttpServer(new HttpRequestProvider()))
             {
-                Console.WriteLine("simpletorrent: Starting SSL listener...");
-                httpServer.Use(new TcpListenerAdapter(new TcpListener(IPAddress.Any, 82)));
-                httpServer.Use(new ListenerSslDecorator(new TcpListenerAdapter(new TcpListener(IPAddress.Any, 4343)), SSLSelfSigned.GenerateSelfSignedCert()));
+                Console.WriteLine("simpletorrent: Starting HTTP(S) server...");
+                bool listeningOne = false;
+
+                foreach (var ip in config.GetValues("Listen"))
+                {
+                    try
+                    {
+                        TcpListener tl = getTcpListener(ip);
+                        httpServer.Use(new TcpListenerAdapter(tl));
+                        Console.WriteLine("simpletorrent: Listening for HTTP on {0}...", tl.LocalEndpoint);
+                        listeningOne = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("simpletorrent: ({0}) " + ex.Message, ip);
+                    }
+                }
+
+
+                System.Security.Cryptography.X509Certificates.X509Certificate2 cert = null;
+                if (config.HasValue("ListenSsl"))
+                {
+                    cert = SSLSelfSigned.GetCertOrGenerate(sslCertificatePath, useECDSA);
+                }
+
+                foreach (var ip in config.GetValues("ListenSsl"))
+                {
+                    try
+                    {
+                        TcpListener tl = getTcpListener(ip);
+                        httpServer.Use(new ListenerSslDecorator(new TcpListenerAdapter(tl), cert, System.Security.Authentication.SslProtocols.Tls11 
+                            | System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls));
+                        Console.WriteLine("simpletorrent: Listening for HTTPS on {0}...", tl.LocalEndpoint);
+                        listeningOne = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("simpletorrent: ({0}) " + ex.Message, ip);
+                    }
+                }
+
+                if (!listeningOne)
+                {
+                    throw new SimpleTorrentException("simpletorrent was unable to bind to a single port.");
+                }
 
                 Console.WriteLine("simpletorrent: Running...");
 
@@ -160,10 +237,34 @@ namespace simpletorrent
                     return Task.Factory.GetCompleted();
                 });
 
+                foreach (var tm in engine.Torrents)
+                {
+                    SetupTorrent(tm);
+                }
+
                 httpServer.Start();
 
                 Console.ReadLine();
             }
+        }
+
+        TcpListener getTcpListener(string ipPortPair)
+        {
+            int port;
+            IPAddress ip;
+
+            try
+            {
+                int portPos = ipPortPair.LastIndexOf(":");
+                port = int.Parse(ipPortPair.Substring(portPos + 1));
+                ip = IPAddress.Parse(ipPortPair.Substring(0, portPos));
+            }
+            catch
+            {
+                throw new SimpleTorrentException("Unable to parse ip/port: " + ipPortPair);
+            }
+
+            return new TcpListener(ip, port);
         }
         
         void SetupTorrent(TorrentManager manager)
@@ -308,8 +409,8 @@ namespace simpletorrent
 
         HttpResponse ProcessRequest(IHttpContext context)
         {
-            string diskPath = context.Request.Uri.OriginalString.TrimStart('/').Replace("/", @"\");
-            Console.WriteLine("Requesting: {0}", diskPath);
+            string diskPath = context.Request.Uri.OriginalString.TrimStart('/');
+            //Console.WriteLine("Requesting: {0}", diskPath);
 
             if (diskPath == "simple.potato")
             {
@@ -335,7 +436,7 @@ namespace simpletorrent
                     bool metaDataMode = manager.Torrent == null;
                     sb.Append("<torrent>");
                     sb.Append(string.Format("<state>{0}</state>", manager.State.ToString()));
-                    sb.Append(string.Format("<name{0}>{1}</name>", metaDataMode ? " MetaDataMode=\"true\"" : "", 
+                    sb.Append(string.Format("<name{0}>{1}</name>", metaDataMode ? " MetaDataMode=\"true\"" : "",
                         metaDataMode ? "" : WebUtility.HtmlEncode(manager.Torrent.Name)));
                     sb.Append(string.Format("<size>{0}</size>", metaDataMode ? -1 : manager.Torrent.Size));
                     sb.Append(string.Format("<progress>{0}</progress>", manager.Progress));
@@ -347,7 +448,7 @@ namespace simpletorrent
 
                     if (ti.CreationDateTime.HasValue)
                     {
-                        sb.Append(string.Format("<starttime>{0}</starttime>", 
+                        sb.Append(string.Format("<starttime>{0}</starttime>",
                             ti.CreationDateTime.Value.ToJavaScriptMilliseconds().ToString()));
                         sb.Append(string.Format("<starttimeago>{0}</starttimeago>",
                             Math.Floor((DateTime.Now - ti.CreationDateTime.Value).TotalMilliseconds).ToString()));
@@ -373,7 +474,7 @@ namespace simpletorrent
 
                 sb.Append("</simpletorrent>");
 
-                return new HttpResponse("text/plain", new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString())),
+                return new HttpResponse("text/plain; charset=utf-8", new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString())),
                     context.Request.Headers.KeepAliveConnection());
             }
             else if (diskPath == "simple-action.potato")
@@ -488,7 +589,12 @@ namespace simpletorrent
             }
             else
             {
-                if (File.Exists(@"web\" + diskPath))
+                if (diskPath.Trim() == "")
+                {
+                    diskPath = "simple.htm";
+                }
+
+                if (File.Exists(Path.Combine(@"web", diskPath)))
                 {
                     var mime = new Dictionary<string, string>
                             {
@@ -506,7 +612,7 @@ namespace simpletorrent
                     var mimetype = "text/plain";
                     mime.TryGetValue(Path.GetExtension(diskPath), out mimetype);
 
-                    return new HttpResponse(mimetype, File.OpenRead(@"web\" + diskPath),
+                    return new HttpResponse(mimetype, File.OpenRead(Path.Combine(@"web", diskPath)),
                         context.Request.Headers.KeepAliveConnection());
                 }
             }
@@ -551,6 +657,21 @@ namespace simpletorrent
             {
                 CreationDateTime = null;
                 ToRemove = null;
+            }
+        }
+
+        public class SimpleTorrentException : Exception
+        {
+            public SimpleTorrentException(string exception)
+                : base(exception)
+            {
+
+            }
+
+            public SimpleTorrentException(string exception, Exception innerException)
+                : base(exception, innerException)
+            {
+
             }
         }
     }
