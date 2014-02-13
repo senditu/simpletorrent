@@ -1,9 +1,11 @@
-![logo](https://raw2.github.com/senditu/simpletorrent/master/simpletorrent/logo/logo.png "Logo")
-
 simpletorrent
 =============
 
-A web-ui based torrent client with responsive design
+A web-ui based torrent client with responsive design. Runs on Windows under .NET, as well as OS/X and *nix under mono.
+
+![simple](https://raw2.github.com/senditu/simpletorrent/master/images/simple.png "Simple")
+
+_Warning: simpletorrent is still under heavy development and should not be considered stable._
 
 License
 -------
