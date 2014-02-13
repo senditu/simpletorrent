@@ -75,6 +75,7 @@ namespace simpletorrent
         string downloadsPath;
         string sslCertificatePath;
         bool useECDSA = false;
+        bool requireProtocolEncryption = false;
         DriveInfo downloadsPathDrive;
         TorrentSettings torrentDefaults;
 
@@ -101,6 +102,9 @@ namespace simpletorrent
             useECDSA = config.HasValue("SslCertificateECDSA");
             fastResumeFile = Path.Combine(torrentsPath, "fastresume.data");
             dhtNodeFile = Path.Combine(torrentsPath, "dht.data");
+
+            requireProtocolEncryption = config.HasValue("RequireProtocolEncryption");
+            
             downloadsPathDrive = null;
 
             foreach (var drive in DriveInfo.GetDrives())
@@ -118,6 +122,7 @@ namespace simpletorrent
             Console.WriteLine("simpletorrent: DownloadRootPath (derived) {0}", downloadsPathDrive);
             Console.WriteLine("simpletorrent: SslCertificatePath {0}", sslCertificatePath);
             Console.WriteLine("simpletorrent: SslCertificateECDSA {0}", useECDSA ? "Yes" : "No");
+            Console.WriteLine("simpletorrent: RequireProtocolEncryption {0}", requireProtocolEncryption ? "Yes" : "No");
 
             int? torrentListenPort = config.GetValueInt("TorrentListenPort");
 
@@ -128,7 +133,7 @@ namespace simpletorrent
 
             EngineSettings engineSettings = new EngineSettings(downloadsPath, torrentListenPort.Value);
             engineSettings.PreferEncryption = true;
-            engineSettings.AllowedEncryption = config.HasValue("RequireProtocolEncryption") ? EncryptionTypes.RC4Full : EncryptionTypes.All;
+            engineSettings.AllowedEncryption = requireProtocolEncryption ? EncryptionTypes.RC4Full : EncryptionTypes.All;
             engineSettings.GlobalMaxConnections = 500;
 
             torrentDefaults = new TorrentSettings(4, 500, 0, 0);
