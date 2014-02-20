@@ -5,7 +5,7 @@ A web-ui based torrent client with responsive design. Runs on Windows under .NET
 
 ![simple](https://raw2.github.com/senditu/simpletorrent/master/images/simple.png "Simple")
 
-_Warning: simpletorrent is still under heavy development and should not be considered stable._
+_Warning: simpletorrent is still under heavy development and should not be considered stable. Official release coming soon. Build from the master branch at your own risk._
 
 License
 -------
