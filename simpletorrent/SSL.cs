@@ -79,7 +79,7 @@ namespace simpletorrent
             BigIntegers.CreateRandomInRange(
                 BigInteger.One, BigInteger.ValueOf(Int64.MaxValue), random);
             certificateGenerator.SetSerialNumber(serialNumber);
-            const string signatureAlgorithm = "SHA256WithRSA";
+            const string signatureAlgorithm = "SHA1WithRSA";
             certificateGenerator.SetSignatureAlgorithm(signatureAlgorithm);
             var subjectDN = new X509Name("CN=simpletorrent");
             var issuerDN = subjectDN;

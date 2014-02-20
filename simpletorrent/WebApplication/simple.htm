@@ -62,9 +62,9 @@
                                 <div class="ui teal floating dropdown icon button">
                                     <i class="dropdown icon"></i>
                                     <div class="menu">
-                                        <div class="item"><i class="edit icon"></i>Edit Post</div>
-                                        <div class="item"><i class="delete icon"></i>Remove Post</div>
-                                        <div class="item"><i class="hide icon"></i>Hide Post</div>
+                                        <div class="item"><i class="edit icon"></i>Not</div>
+                                        <div class="item"><i class="delete icon"></i>Yet</div>
+                                        <div class="item"><i class="hide icon"></i>Implemented</div>
                                     </div>
                                 </div>
                             </div>
@@ -80,7 +80,7 @@
                         <div id="st-torrentcontainer">
 
                         </div>
-                        <div class="ui basic segment" style="padding: 0">
+                        <div class="ui basic segment" style="padding: 0" id="st-generaltags">
                             <div class="ui tags" style="float:right;">
                                 <div class="ui black label">
                                     <i class="info icon"></i>
@@ -88,7 +88,7 @@
                                 </div>
                                 <div class="ui black label">
                                     <i class="info icon"></i>
-                                    <span id="st-freespace">5.2 TB</span>
+                                    <span id="st-freespace">1.0 TB</span>
                                 </div>
                             </div>
                         </div>
@@ -97,6 +97,63 @@
             </div>
             <div class="row">
                 <div class="column"></div>
+            </div>
+        </div>
+        <div class="ui small modal" id="st-aboutmodal">
+            <i class="close icon"></i>
+            <div class="header">
+                <i class="cloud icon"></i>
+                <span id="st-deletetorrentmodal-title">simpletorrent — About</span>
+            </div>
+            <div class="content">
+                <h3>Version 0.41 ('counteraction rising')</h3>
+                <p>For more information, please see our website.</p>
+                <a href="https://github.com/senditu/simpletorrent" target="_blank">https://github.com/senditu/simpletorrent</a>
+            </div>
+            <div class="actions">
+                <div class="ui button right labeled icon positive">Okay<i class="checkmark icon"></i></div>
+            </div>
+        </div>
+        <div class="ui small modal" id="st-loginmodal">
+            <div class="header">
+                <i class="user icon"></i>simpletorrent — Let's begin
+            </div>
+            <div class="content">
+                <div class="ui form">
+                    <div class="field">
+                        <label>Username</label>
+                        <div class="ui left labeled icon input">
+                            <input placeholder="Username" type="text" id="st-loginmodal-username">
+                            <i class="user icon"></i>
+                            <div class="ui corner label">
+                                <i class="icon asterisk"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Password</label>
+                        <div class="ui left labeled icon input">
+                            <input placeholder="Password" type="password" id="st-loginmodal-password">
+                            <i class="lock icon"></i>
+                            <div class="ui corner label">
+                                <i class="icon asterisk"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="actions">
+                <div class="ui button right labeled icon positive">Login<i class="tag icon"></i></div>
+            </div>
+            <div class="ui inverted dimmer" id="st-loginmodal-dimmer">
+                <div class="content">
+                    <div class="center">
+                        <div class="ui inverted icon header">
+                            <i class="icon circular teal heart"></i>
+                            <h3 style="text-shadow:0 0 1px rgba(255,255,255,0.3);color:grey">Logging in...</h3>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="ui modal" id="st-addtorrenturlmodal">
@@ -144,18 +201,39 @@
     <script>
         var lastCheck = new Date();
         var torrentTarget = '';
+        var loggedIn = false;
 
         $(document).ready(function () {
             attemptServerPingWithTimeout();
 
+            //General Setup
             $('.ui.dropdown').dropdown();
 
+            //Message Setup
             $('.message .close').click(function() {
                 $(this).closest('.message').css({'min-height': '0', 'overflow': 'hidden' })
                 .animate({ opacity:0, height:0, margin:0, padding:0 },
                         500, function () { $(this).remove() });
             });
 
+            //About Modal Setup
+            $('#st-aboutmodal')
+                .modal('attach events', '.st-logo', 'show');
+
+            //Login Modal Setup
+            $('#st-loginmodal-username,#st-loginmodal-password').change(function () {
+                $('#st-loginmodal .field').removeClass('error');
+            });
+
+            $('#st-loginmodal-username,#st-loginmodal-password').keypress(function(e) {
+                if (e.which == 13) {
+                    if (doLogin()) {
+                        $('#st-loginmodal').modal('hide');
+                    }
+                }
+            });
+
+            //Add Torrent Modal Setup
             $('#st-addtorrenturlmodal')
 				.modal('setting', {
 				    'transition': 'fade up',
@@ -168,6 +246,7 @@
 				})
 				.modal('attach events', '#st-addtorrenturlbutton', 'show');
 
+            //Delete Torrent Modal Setup
             $('#st-deletetorrentmodal')
                 .modal('setting', {
                     'transition': 'fade up'
@@ -226,16 +305,78 @@
                     }
                 },
                 complete: function () {
-                    if (toSetTimeout)
+                    if (toSetTimeout && loggedIn)
                         setTimeout(attemptServerPingWithTimeout, 5000);
                 }
             });
+        }
+
+        function doLogin() {
+            $('#st-loginmodal-dimmer').dimmer('show');
+            $('#st-loginmodal .field').removeClass('error');
+
+            var success = false;
+
+            $.ajax({
+                type: "POST",
+                dataType: "text",
+                url: "simple-action.potato",
+                data: 'login:' + $('#st-loginmodal-username').val() + ':' + $('#st-loginmodal-password').val(),
+                async: false,
+                success: function (text) {
+                    $('#st-loginmodal-dimmer').dimmer('hide');
+
+                    if (text.trim().toLowerCase() == "ok") {
+                        success = true;
+
+                        //clear out these, so they're not still in the browser
+                        $('#st-loginmodal-username').val('');
+                        $('#st-loginmodal-password').val('');
+
+                        attemptServerPing(true);
+                    } else {
+                        $('#st-loginmodal-password').val('');
+                        $('#st-loginmodal .field').addClass('error');
+                    }
+                }
+            });
+
+            return success;
         }
 
         function repaint(xml) {
             lastCheck = new Date();
 
             $('#st-harderror').fadeOut();
+
+            if ($(xml).find('simpletorrent').attr('Login') != null &&
+                $(xml).find('simpletorrent').attr('Login').toLowerCase() == "none") {
+                loggedIn = false;
+
+                //If we got logged out, clear torrents.
+                $('#st-torrentcontainer').html('');
+                if (!$('#st-notorrentsmessage').is(':visible')) {
+                    $('#st-notorrentsmessage').show();
+                }
+
+                $('#st-generaltags').hide();
+
+                $('#st-loginmodal')
+                    .modal('setting', 'closable', false)
+                    .modal('setting', 'onApprove', function () {
+                        return doLogin();
+                    })
+                    .modal('show');
+
+                return;
+            }
+            else {
+                loggedIn = true;
+
+                if (!$('#st-generaltags').is(':visible')) {
+                    $('#st-generaltags').show();
+                }
+            }
 
             var dht = $(xml).find('dht').text();
             $('#st-dhtcount').html('DHT: ' + dht + ' nodes');
@@ -374,11 +515,11 @@
                         '<div class="ui inverted dimmer">' +
                             '<div class="content">' +
                                 '<div class="center">' +
-                                    '<h3 class="ui inverted icon header">' +
+                                    '<div class="ui inverted icon header">' +
                                         '<i class="icon circular teal remove"></i>' +
-                                        '<div style="text-shadow:0 0 1px rgba(255,255,255,0.3);color:grey">Removing Torrent...</div>' +
+                                        '<h3 style="text-shadow:0 0 1px rgba(255,255,255,0.3);color:grey">Removing Torrent...</h3>' +
                                         '<div style="text-shadow:0 0 1px rgba(255,255,255,0.3);color:grey;font-size:0.6em">(this may take a moment)</div>' +
-                                    '</h3>' +
+                                    '</div>' +
                                 '</div>' +
                             '</div>' +
                         '</div>';

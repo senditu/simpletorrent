@@ -25,6 +25,49 @@ using System.Threading.Tasks;
 
 namespace simpletorrent
 {
+    public static class Utilities
+    {
+        static Random r = new Random();
+
+        public static string ReadLine()
+        {
+            ConsoleKeyInfo inf;
+            StringBuilder input = new StringBuilder();
+            
+            inf = Console.ReadKey(true);
+            
+            while (inf.Key != ConsoleKey.Enter)
+            {
+                input.Append(inf.KeyChar);
+                inf = Console.ReadKey(true);
+            }
+
+            Console.WriteLine();
+
+            return input.ToString();
+        }
+
+        public static void SCryptBenchmark(out int iterations)
+        {
+            int it = 16000;
+            double mils = 0;
+
+            do
+            {
+                it += r.Next(1000, 2000);
+                DateTime start = DateTime.Now;
+                for (int i = 0; i < 3; i++)
+                {
+                    Org.BouncyCastle.Crypto.Generators.SCrypt.Generate(Encoding.UTF8.GetBytes("abcd"),
+                                Encoding.UTF8.GetBytes("abcd"), it, 8, 1, 24);
+                }
+                mils = (DateTime.Now - start).TotalMilliseconds / 3d;
+            } while (mils < 350);
+
+            iterations = it;
+        }
+    }
+
     public static class DateTimeExtensions
     {
         private static readonly long DatetimeMinTimeTicks =

@@ -51,9 +51,46 @@ namespace simpletorrent
         {
             try
             {
-                Program prog = new Program();
-                prog.Start();
-                prog.Stop();
+                bool startMainApp = true;
+
+                NDesk.Options.OptionSet p = new NDesk.Options.OptionSet()
+                    .Add("p", pass =>
+                    {
+                        startMainApp = false;
+                        SimpleConfiguration config = null;
+
+                        try
+                        {
+                            config = new SimpleConfiguration("simple.cfg");
+                            if (!config.HasValue("SimpleSalt")) throw new Exception();
+                        }
+                        catch
+                        {
+                            Console.WriteLine("simpletorrent: ERROR! Either \"simple.cfg\" does not exist, or the SimpleSalt value has not been defined."
+                                + " Please fix this issue before creating a password.");
+                            return;
+                        }
+
+                        Console.Write("Password (Press enter when done): ");
+                        string password = Utilities.ReadLine();
+
+                        Console.WriteLine("simpletorrent: Benchmarking SCrypt...");
+                        int its;
+                        Utilities.SCryptBenchmark(out its);
+                        Console.WriteLine();
+
+                        Console.WriteLine(its + ":" + Convert.ToBase64String(
+                            Org.BouncyCastle.Crypto.Generators.SCrypt.Generate(Encoding.UTF8.GetBytes(password),
+                            Encoding.UTF8.GetBytes(config.GetValue("SimpleSalt")), its, 8, 1, 32)));
+                    });
+                p.Parse(args);
+
+                if (startMainApp)
+                {
+                    Program prog = new Program();
+                    prog.Start();
+                    prog.Stop();
+                }
             }
             catch (Exception ex)
             {
@@ -64,10 +101,16 @@ namespace simpletorrent
             }
         }
 
+        SimpleTorrentOperatingMode simpleOperatingSystem;
+        DebugWriter debugWriter;
+
         ClientEngine engine;
         List<TorrentManager> torrents;
         List<SimpleMessage> messages;
         SimpleConfiguration config;
+
+        System.Timers.Timer seedingLimitTimer; 
+        List<Tuple<DateTime, TorrentManager>> seedingLimitTorrents;
 
         string dhtNodeFile;
         string torrentsPath;
@@ -79,7 +122,10 @@ namespace simpletorrent
         DriveInfo downloadsPathDrive;
         TorrentSettings torrentDefaults;
 
-        readonly string VERSION = "mwras";
+        int sessionLimit;
+        int? seedingLimit;
+
+        readonly string VERSION = "v0.41 ('counteraction rising')";
 
         Dictionary<string, TorrentInformation> torrentInformation = new Dictionary<string, TorrentInformation>();
 
@@ -89,12 +135,43 @@ namespace simpletorrent
             torrents = new List<TorrentManager>();
             messages = new List<SimpleMessage>();
 
+            //Torrents to remove
+            seedingLimitTorrents = new List<Tuple<DateTime, TorrentManager>>();
+
             Console.WriteLine("simpletorrent: version {0}", VERSION);
             Console.WriteLine("simpletorrent: Reading configuration file (simple.cfg)...");
 
             config = new SimpleConfiguration("simple.cfg");
             string basePath = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location);
-            Console.WriteLine("simpletorrent: BasePath (derived) {0}", basePath);
+            Console.WriteLine("simpletorrent: ApplicationPath (derived) {0}", basePath);
+
+            if (config.HasValue("Debug"))
+            {
+                debugWriter = new DebugWriter(true);
+                Console.WriteLine("simpletorrent: Debugging Enabled!");
+            }
+            else
+            {
+                debugWriter = new DebugWriter(false);
+            }
+
+            PlatformID os = Environment.OSVersion.Platform;
+
+            if (os == PlatformID.MacOSX)
+            {
+                Console.WriteLine("simpletorrent: We think we're on MacOSX");
+                simpleOperatingSystem = SimpleTorrentOperatingMode.MacOSX;
+            }
+            else if (os == PlatformID.Unix)
+            {
+                Console.WriteLine("simpletorrent: We think we're on *nix");
+                simpleOperatingSystem = SimpleTorrentOperatingMode.StarNix;
+            }
+            else
+            {
+                Console.WriteLine("simpletorrent: We think we're on Windows");
+                simpleOperatingSystem = SimpleTorrentOperatingMode.Windows;
+            }
             
             torrentsPath = Path.GetFullPath(config.GetValue("TorrentPath", Path.Combine(basePath, "Torrents")));
             downloadsPath = Path.GetFullPath(config.GetValue("DownloadPath", Path.Combine(basePath, "Downloads")));
@@ -104,13 +181,47 @@ namespace simpletorrent
             dhtNodeFile = Path.Combine(torrentsPath, "dht.data");
 
             requireProtocolEncryption = config.HasValue("RequireProtocolEncryption");
+
+            sessionLimit = config.GetValueInt("SessionLimit", 20);
+            seedingLimit = config.GetValueInt("SeedingLimit");
+
+            // If the SavePath does not exist, we want to create it.
+            if (!Directory.Exists(downloadsPath))
+                Directory.CreateDirectory(engine.Settings.SavePath);
+
+            // If the torrentsPath does not exist, we want to create it
+            if (!Directory.Exists(torrentsPath))
+                Directory.CreateDirectory(torrentsPath);
             
             downloadsPathDrive = null;
+            string myRootPath = Path.GetPathRoot(downloadsPath).ToLower();
+
+            //TODO: See how this works on OSX
+            if (simpleOperatingSystem == SimpleTorrentOperatingMode.StarNix)
+            {
+                System.Diagnostics.Process proc = new System.Diagnostics.Process();
+                proc.EnableRaisingEvents = false;
+                proc.StartInfo.FileName = "bash";
+                proc.StartInfo.Arguments = "-c \"df -h " + downloadsPath + " | awk '{print $6}' | tail -1\"";
+                proc.StartInfo.UseShellExecute = false;
+                proc.StartInfo.RedirectStandardOutput = true;
+                proc.Start();
+                string output = proc.StandardOutput.ReadToEnd().Trim().ToLower();
+                proc.WaitForExit();
+                
+                if (proc.ExitCode == 0)
+                {
+                    myRootPath = output;
+                    debugWriter.WriteLine("*nix override (bash -c 'df -h <path>') - \"" + output + "\"");
+                }
+            }
 
             foreach (var drive in DriveInfo.GetDrives())
             {
+                debugWriter.WriteLine("Enemerating Drives - " + drive.RootDirectory.FullName.ToString());
+
                 if (drive.RootDirectory.FullName.ToLower()
-                    == Path.GetPathRoot(downloadsPath).ToLower())
+                    == myRootPath)
                 {
                     downloadsPathDrive = drive;
                     break;
@@ -123,13 +234,17 @@ namespace simpletorrent
             Console.WriteLine("simpletorrent: SslCertificatePath {0}", sslCertificatePath);
             Console.WriteLine("simpletorrent: SslCertificateECDSA {0}", useECDSA ? "Yes" : "No");
             Console.WriteLine("simpletorrent: RequireProtocolEncryption {0}", requireProtocolEncryption ? "Yes" : "No");
+            Console.WriteLine("simpletorrent: SessionLimit {0}", sessionLimit);
+            Console.WriteLine("simpletorrent: SeedingLimit {0}", seedingLimit.HasValue ? seedingLimit.Value.ToString() : "No");
 
             int? torrentListenPort = config.GetValueInt("TorrentListenPort");
 
             if (!torrentListenPort.HasValue)
             {
-                throw new SimpleTorrentException("Configuration does not have a proper 'TorrentListenPort' value defined.", null);
+                throw new SimpleTorrentException("Configuration does not have a proper 'TorrentListenPort' value defined", null);
             }
+
+            Console.WriteLine("simpletorrent: TorrentListenPort {0}", torrentListenPort);
 
             EngineSettings engineSettings = new EngineSettings(downloadsPath, torrentListenPort.Value);
             engineSettings.PreferEncryption = true;
@@ -147,7 +262,7 @@ namespace simpletorrent
             }
             catch
             {
-                Console.WriteLine("simpletorrent: No existing dht nodes could be loaded");
+                Console.WriteLine("simpletorrent: No existing DHT nodes could be loaded");
             }
 
             DhtListener dhtListner = new DhtListener(new IPEndPoint(IPAddress.Any, torrentListenPort.Value));
@@ -155,14 +270,6 @@ namespace simpletorrent
             engine.RegisterDht(dht);
             dhtListner.Start();
             engine.DhtEngine.Start(nodes);
-
-            // If the SavePath does not exist, we want to create it.
-            if (!Directory.Exists(engine.Settings.SavePath))
-                Directory.CreateDirectory(engine.Settings.SavePath);
-
-            // If the torrentsPath does not exist, we want to create it
-            if (!Directory.Exists(torrentsPath))
-                Directory.CreateDirectory(torrentsPath);
 
             foreach (var torrent in Directory.GetFiles(torrentsPath, "*.torrent"))
             {
@@ -185,10 +292,39 @@ namespace simpletorrent
                 fastResume = new BEncodedDictionary();
             }
 
+            if (seedingLimit.HasValue)
+            {
+                Console.WriteLine("simpletorrent: Starting seeding limits watchdog timer...");
+                seedingLimitTimer = new System.Timers.Timer();
+                seedingLimitTimer.AutoReset = true;
+                seedingLimitTimer.Interval = 60 * 1000;
+                seedingLimitTimer.Elapsed += (s, e) =>
+                {
+                    lock(seedingLimitTorrents)
+                    {
+                        var torrentsToRemove = seedingLimitTorrents.Where(a => (DateTime.Now - a.Item1).TotalSeconds >= seedingLimit).ToArray();
+                        foreach (var i in torrentsToRemove)
+                        {
+                            Console.WriteLine("simpletorrent: Automatically removing \"{0}\"...", 
+                                i.Item2.Torrent.Name);
+                            torrentInformation[i.Item2.InfoHash.ToHex()].ToRemove = "delete-torrent";
+                            seedingLimitTorrents.Remove(i);
+                            i.Item2.Stop();
+                        }
+
+                    }
+                };
+                seedingLimitTimer.Start();
+            }
+
             using (var httpServer = new HttpServer(new HttpRequestProvider()))
             {
                 Console.WriteLine("simpletorrent: Starting HTTP(S) server...");
                 bool listeningOne = false;
+
+                Console.WriteLine("simpletorrent: Creating session manager...");
+                httpServer.Use(new SessionHandler<SimpleTorrentSession>(() => 
+                    new SimpleTorrentSession(), sessionLimit));
 
                 foreach (var ip in config.GetValues("Listen"))
                 {
@@ -278,11 +414,11 @@ namespace simpletorrent
             manager.PieceHashed += delegate(object o, PieceHashedEventArgs e)
             {
                 var tm = (TorrentManager)o;
-                lock (this)
+                /*lock (this)
                 {
                     if (tm.State != TorrentState.Hashing)
                         Console.WriteLine(string.Format("Piece Hashed: {0} - {1}", e.PieceIndex, e.HashPassed ? "Pass" : "Fail"));
-                }
+                }*/
             };
 
             // Every time the state changes (Stopped -> Seeding -> Downloading -> Hashing) this is fired
@@ -293,9 +429,15 @@ namespace simpletorrent
                 var name = !tm.HasMetadata ? "Magnet" : tm.Torrent.Name;
 
                 lock (this)
-                        Console.WriteLine("[{2}] OldState: {0}, NewState: {1}",
-                            e.OldState.ToString(), e.NewState.ToString(),
-                            name);
+                        Console.WriteLine("simpletorrent: [{1}] {0}",
+                            e.NewState.ToString(), name);
+
+                if (e.NewState == TorrentState.Seeding && seedingLimit.HasValue 
+                    && seedingLimitTorrents.Where(a => a.Item2 == tm).Count() == 0)
+                {
+                    Console.WriteLine("simpletorrent: Queuing \"{0}\" for automatic removal...", name);
+                    seedingLimitTorrents.Add(new Tuple<DateTime, TorrentManager>(DateTime.Now, tm));
+                }
 
                 if (e.NewState == TorrentState.Stopped)
                 {
@@ -315,19 +457,19 @@ namespace simpletorrent
                         if (ti.ToRemove == "delete-torrent-and-data")
                         {
                             System.Threading.Thread.Sleep(200);
-                            if (Directory.Exists(tm.SavePath + "\\" + tm.Torrent.Name))
+                            if (Directory.Exists(Path.Combine(tm.SavePath, tm.Torrent.Name)))
                             {
-                                Directory.Delete(tm.SavePath + "\\" + tm.Torrent.Name, true);
+                                Directory.Delete(Path.Combine(tm.SavePath, tm.Torrent.Name), true);
                             }
                             else
                             {
-                                File.Delete(tm.SavePath + "\\" + tm.Torrent.Name);
+                                File.Delete(Path.Combine (tm.SavePath, tm.Torrent.Name));
                             }
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
-
+                        debugWriter.WriteLine("Exception when attempting to stop torrent: " + ex.ToString());
                     }
                 }
                 else
@@ -351,7 +493,7 @@ namespace simpletorrent
                 {
                     t.AnnounceComplete += delegate(object sender, AnnounceResponseEventArgs e)
                     {
-                        Console.WriteLine(string.Format("{0}: {1}", e.Successful, e.Tracker.ToString()));
+                        //Console.WriteLine(string.Format("{0}: {1}", e.Successful, e.Tracker.ToString()));
                     };
                 }
             }
@@ -417,6 +559,77 @@ namespace simpletorrent
             string diskPath = context.Request.Uri.OriginalString.TrimStart('/');
             //Console.WriteLine("Requesting: {0}", diskPath);
 
+            SimpleTorrentSession mySession = ((SimpleTorrentSession)context.State.Session);
+
+            if (mySession != null && !((SimpleTorrentSession)context.State.Session).LoggedIn)
+            {
+                if (diskPath == "simple.potato" || diskPath == "simple-action.potato")
+                {
+                    if (diskPath == "simple-action.potato")
+                    {
+                        try
+                        {
+                            var data = Encoding.UTF8.GetString(context.Request.Post).Split(new string[] { ":" }, 2, StringSplitOptions.None);
+                            var action = data[0].ToLower();
+                            var payload = data[1];
+
+                            if (action == "login")
+                            {
+                                //<username>:<pass>
+                                var loginPair = payload.Split(new string[] { ":" }, 2, StringSplitOptions.None);
+
+                                foreach (var i in config.GetValues("SimpleUser"))
+                                {
+                                    //<username>:<scrypt N>:<32-byte scrypt output>
+                                    var configPair = i.Split(new string[] { ":" }, 3, StringSplitOptions.None);
+                                    
+                                    if (loginPair[0].ToLower() == configPair[0].ToLower())
+                                    {
+                                        string calculatedHash = 
+                                            Convert.ToBase64String(Org.BouncyCastle.Crypto.Generators.SCrypt.Generate(Encoding.UTF8.GetBytes(loginPair[1]),
+                                                Encoding.UTF8.GetBytes(config.GetValue("SimpleSalt")),
+                                                int.Parse(configPair[1]), 8, 1, 32));
+
+                                        if (configPair[2] == calculatedHash)
+                                        {
+                                            mySession.LoggedIn = true;
+                                            mySession.Username = configPair[0];
+                                            Console.WriteLine("simpletorrent: Login succeeded for {0}...", loginPair[0]);
+                                            return new HttpResponse(HttpResponseCode.Ok, "OK", context.Request.Headers.KeepAliveConnection());
+                                        }
+
+                                        break;
+                                    }
+                                }
+
+                                if (!mySession.LoggedIn)
+                                {
+                                    Console.WriteLine("simpletorrent: Failed login for {0}", loginPair[0]);
+
+                                    //Sleep to make brute force infeasable
+                                    System.Threading.Thread.Sleep(1000);
+                                    return new HttpResponse("text/plain; charset=utf-8",
+                                                new MemoryStream(Encoding.UTF8.GetBytes("NO")),
+                                                context.Request.Headers.KeepAliveConnection());
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+
+                    return new HttpResponse("text/plain; charset=utf-8",
+                            new MemoryStream(Encoding.UTF8.GetBytes("<?xml version=\"1.0\" encoding=\"UTF-8\"?><simpletorrent Login=\"None\" />")),
+                            context.Request.Headers.KeepAliveConnection());
+                }
+            }
+
+            if (mySession == null)
+            {
+                return new HttpResponse("text/plain; charset=utf-8",
+                            new MemoryStream(Encoding.UTF8.GetBytes("<?xml version=\"1.0\" encoding=\"UTF-8\"?><simpletorrent Login=\"None\" />")),
+                            context.Request.Headers.KeepAliveConnection());
+            }
+
             if (diskPath == "simple.potato")
             {
                 StringBuilder sb = new StringBuilder();
@@ -464,7 +677,7 @@ namespace simpletorrent
 
                 lock (messages)
                 {
-                    foreach (var message in messages)
+                    foreach (var message in messages.Where(a => a.id == mySession.ID))
                     {
                         sb.Append("<message>");
                         sb.Append(string.Format("<title>{0}</title>", WebUtility.HtmlEncode(message.Title)));
@@ -539,7 +752,8 @@ namespace simpletorrent
                                 {
                                     Message = ex.ToString(),
                                     Type = SimpleMessageType.Exception,
-                                    Title = "Exception: add-torrent-links"
+                                    Title = "Exception: add-torrent-links",
+                                    id = mySession.ID
                                 }.AddMessage(messages);
                             }
                         }
@@ -561,7 +775,8 @@ namespace simpletorrent
                             {
                                 Message = ex.ToString(),
                                 Type = SimpleMessageType.Exception,
-                                Title = "Exception: delete-torrent"
+                                Title = "Exception: delete-torrent",
+                                id = mySession.ID
                             }.AddMessage(messages);
                         }
                     }
@@ -582,7 +797,8 @@ namespace simpletorrent
                             {
                                 Message = ex.ToString(),
                                 Type = SimpleMessageType.Exception,
-                                Title = "Exception: delete-torrent"
+                                Title = "Exception: delete-torrent",
+                                id = mySession.ID
                             }.AddMessage(messages);
                         }
                     }
@@ -594,7 +810,8 @@ namespace simpletorrent
             }
             else
             {
-                if (diskPath.Trim() == "")
+                if (diskPath.Trim() == ""
+                    || !File.Exists(Path.Combine(@"web", diskPath)))
                 {
                     diskPath = "simple.htm";
                 }
@@ -629,6 +846,16 @@ namespace simpletorrent
         {
             byte[] b = System.Text.UTF8Encoding.UTF8.GetBytes(s);
             stream.Write(b, 0, b.Length);
+        }
+
+        class SimpleTorrentSession : Session
+        {
+            public bool LoggedIn;
+            public string Username;
+
+            public string ID { get; set; }
+            public DateTime LastAccessTime { get; set; }
+            public IPEndPoint EndPoint { get; set; }
         }
 
         enum SimpleMessageType
@@ -677,6 +904,31 @@ namespace simpletorrent
                 : base(exception, innerException)
             {
 
+            }
+        }
+
+        enum SimpleTorrentOperatingMode
+        {
+            Windows,
+            StarNix,
+            MacOSX
+        }
+    }
+
+    class DebugWriter
+    {
+        bool debug;
+
+        public DebugWriter(bool debug)
+        {
+            this.debug = debug;
+        }
+
+        public void WriteLine(string debugInfo)
+        {
+            if (debug)
+            {
+                Console.WriteLine("simpletorrent: (DEBUG) " + debugInfo);
             }
         }
     }
