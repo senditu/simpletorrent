@@ -51,12 +51,14 @@ body {
 
 #main .tags a,#main .tags div  { margin-top: 0; }
 #main .separator { margin: 2rem; }
-#main .st-logo { width: 150px; height: 150px; background: url(../logo.svg) no-repeat #fff; margin: 0 auto }
+#main .st-logo { width: 150px; height: 150px; background: url(../logo.svg) no-repeat #fff; margin: 0 auto; cursor: pointer }
 #main #st-quickbuttonsegment { padding: 0; }
 #main #st-quickbuttonsegment .buttons { float: right; }
 #main #st-quickbuttonsegment #st-addtorrenturlbutton { padding: 0.76em 1.5em }
 
 #main .st-name { vertical-align:middle; margin-right: 5px; }
+#main .st-legal-text { margin-top: 21px; font-size: 0.8em }
+#main .st-legal-header { background-color: #fff; color: #6f6f6f; }
 
 /*
 ============================

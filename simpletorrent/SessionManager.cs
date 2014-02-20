@@ -36,6 +36,7 @@ namespace simpletorrent
         string ID { get; set; }
         DateTime LastAccessTime { get; set; }
         IPEndPoint EndPoint { get; set; }
+        void CloseSession();
     }
 
     internal class SessionHandler<TSession> : IHttpRequestHandler
@@ -66,7 +67,7 @@ namespace simpletorrent
                             TSession l;
                             if (_sessions.TryRemove(i.Key, out l))
                             {
-                                Console.WriteLine("simpletorrent: Removing expired session for ({0})...", l.EndPoint.Address);
+                                l.CloseSession();
                             }
 
                         }

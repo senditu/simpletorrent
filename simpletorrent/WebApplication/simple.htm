@@ -35,7 +35,7 @@
 <body id="main">
     <form id="form1">
         <div class="ui page grid">
-            <div class="row login-box">
+            <div class="row">
                 <div class="column">
                     <div id="st-messagecontainer">
                         <div class="ui icon message banner red" id="st-harderror" style="display:none">
@@ -62,9 +62,7 @@
                                 <div class="ui teal floating dropdown icon button">
                                     <i class="dropdown icon"></i>
                                     <div class="menu">
-                                        <div class="item"><i class="edit icon"></i>Not</div>
-                                        <div class="item"><i class="delete icon"></i>Yet</div>
-                                        <div class="item"><i class="hide icon"></i>Implemented</div>
+                                        <div class="item" id="st-logoutbutton"><i class="remove icon"></i>Sign out</div>
                                     </div>
                                 </div>
                             </div>
@@ -102,21 +100,50 @@
         <div class="ui small modal" id="st-aboutmodal">
             <i class="close icon"></i>
             <div class="header">
-                <i class="cloud icon"></i>
-                <span id="st-deletetorrentmodal-title">simpletorrent — About</span>
+                <span>simpletorrent — About</span>
             </div>
             <div class="content">
-                <h3>Version 0.41 ('counteraction rising')</h3>
-                <p>For more information, please see our website.</p>
-                <a href="https://github.com/senditu/simpletorrent" target="_blank">https://github.com/senditu/simpletorrent</a>
+                <div class="ui icon message st-legal-header">
+                    <i class="heart icon"></i>
+                    <div class="content">
+                        <div class="header">
+                            Version 0.41 ('counteraction rising')
+                        </div>
+                        <p style="margin-bottom:9px">For information, source code, and more please see our website.</p>
+                        <a href="https://github.com/senditu/simpletorrent" target="_blank">https://github.com/senditu/simpletorrent</a>
+                    </div>
+                </div>
+                <div class="st-legal-text">
+                    <p>
+                        Copyright (C) 2014  senditu
+                    </p>
+                    <p>
+                        This program is free software: you can redistribute it and/or modify
+                        it under the terms of the GNU Affero General Public License as
+                        published by the Free Software Foundation, either version 3 of the
+                        License, or (at your option) any later version.
+                    </p>
+
+                    <p>
+                        This program is distributed in the hope that it will be useful,
+                        but WITHOUT ANY WARRANTY; without even the implied warranty of
+                        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+                        GNU Affero General Public License for more details.
+                    </p>
+                    <p>
+                        You should have received a copy of the GNU Affero General Public License
+                        along with this program.  If not, see
+                        <a href="http://www.gnu.org/licenses/" target="_blank">http://www.gnu.org/licenses/</a>.
+                    </p>
+                </div>
             </div>
             <div class="actions">
-                <div class="ui button right labeled icon positive">Okay<i class="checkmark icon"></i></div>
+                <div class="ui button right labeled icon positive">Close me<i class="checkmark icon"></i></div>
             </div>
         </div>
         <div class="ui small modal" id="st-loginmodal">
             <div class="header">
-                <i class="user icon"></i>simpletorrent — Let's begin
+                <i class="heart icon"></i>simpletorrent — Let's begin
             </div>
             <div class="content">
                 <div class="ui form">
@@ -143,14 +170,14 @@
                 </div>
             </div>
             <div class="actions">
-                <div class="ui button right labeled icon positive">Login<i class="tag icon"></i></div>
+                <div class="ui button right labeled icon positive">Sign in<i class="checkmark icon"></i></div>
             </div>
             <div class="ui inverted dimmer" id="st-loginmodal-dimmer">
                 <div class="content">
                     <div class="center">
                         <div class="ui inverted icon header">
                             <i class="icon circular teal heart"></i>
-                            <h3 style="text-shadow:0 0 1px rgba(255,255,255,0.3);color:grey">Logging in...</h3>
+                            <h3 style="text-shadow:0 0 1px rgba(255,255,255,0.3);color:grey">Signing in...</h3>
                         </div>
                     </div>
                 </div>
@@ -193,8 +220,8 @@
             </div>
             <div class="actions">
                 <div class="ui button black">Cancel</div>
-                <div class="ui button right labeled icon orange" id="st-deletetorrentmodal-deleteall-button">Delete Torrent &amp; Data<i class="delete icon"></i></div>
-                <div class="ui button right labeled icon positive" id="st-deletetorrentmodal-delete-button">Delete Torrent<i class="checkmark icon"></i></div>
+                <div class="ui button right labeled icon orange" id="st-deletetorrentmodal-deleteall-button">Delete Torrent &amp; Data<i class="trash icon"></i></div>
+                <div class="ui button right labeled icon positive" id="st-deletetorrentmodal-delete-button">Delete Torrent<i class="delete icon"></i></div>
             </div>
         </div>
     </form>
@@ -216,6 +243,12 @@
                         500, function () { $(this).remove() });
             });
 
+            //Main Dropdown Setup
+            $('#st-logoutbutton').click(function () {
+                $('#st-logoutbutton').removeClass('active');
+                postServerData('logout:logout');
+            });
+
             //About Modal Setup
             $('#st-aboutmodal')
                 .modal('attach events', '.st-logo', 'show');
@@ -225,7 +258,9 @@
                 $('#st-loginmodal .field').removeClass('error');
             });
 
-            $('#st-loginmodal-username,#st-loginmodal-password').keypress(function(e) {
+            $('#st-loginmodal-username,#st-loginmodal-password').keypress(function (e) {
+                $('#st-loginmodal .field').removeClass('error');
+
                 if (e.which == 13) {
                     if (doLogin()) {
                         $('#st-loginmodal').modal('hide');

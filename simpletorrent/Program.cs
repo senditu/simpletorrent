@@ -305,13 +305,22 @@ namespace simpletorrent
                         var torrentsToRemove = seedingLimitTorrents.Where(a => (DateTime.Now - a.Item1).TotalSeconds >= seedingLimit).ToArray();
                         foreach (var i in torrentsToRemove)
                         {
-                            Console.WriteLine("simpletorrent: Automatically removing \"{0}\"...", 
-                                i.Item2.Torrent.Name);
-                            torrentInformation[i.Item2.InfoHash.ToHex()].ToRemove = "delete-torrent";
-                            seedingLimitTorrents.Remove(i);
-                            i.Item2.Stop();
-                        }
+                            try
+                            {
+                                seedingLimitTorrents.Remove(i);
 
+                                if (i != null && i.Item2.State == TorrentState.Seeding)
+                                {
+                                    Console.WriteLine("simpletorrent: Automatically removing \"{0}\"...",
+                                        i.Item2.Torrent.Name);
+                                    torrentInformation[i.Item2.InfoHash.ToHex()].ToRemove = "delete-torrent";
+                                    i.Item2.Stop();
+                                }
+                            }
+                            catch
+                            {
+                            }
+                        }
                     }
                 };
                 seedingLimitTimer.Start();
@@ -432,11 +441,14 @@ namespace simpletorrent
                         Console.WriteLine("simpletorrent: [{1}] {0}",
                             e.NewState.ToString(), name);
 
-                if (e.NewState == TorrentState.Seeding && seedingLimit.HasValue 
-                    && seedingLimitTorrents.Where(a => a.Item2 == tm).Count() == 0)
+                lock (seedingLimitTorrents)
                 {
-                    Console.WriteLine("simpletorrent: Queuing \"{0}\" for automatic removal...", name);
-                    seedingLimitTorrents.Add(new Tuple<DateTime, TorrentManager>(DateTime.Now, tm));
+                    if (e.NewState == TorrentState.Seeding && seedingLimit.HasValue
+                        && seedingLimitTorrents.Where(a => a.Item2 == tm).Count() == 0)
+                    {
+                        Console.WriteLine("simpletorrent: Queuing \"{0}\" for automatic removal...", name);
+                        seedingLimitTorrents.Add(new Tuple<DateTime, TorrentManager>(DateTime.Now, tm));
+                    }
                 }
 
                 if (e.NewState == TorrentState.Stopped)
@@ -604,7 +616,7 @@ namespace simpletorrent
 
                                 if (!mySession.LoggedIn)
                                 {
-                                    Console.WriteLine("simpletorrent: Failed login for {0}", loginPair[0]);
+                                    Console.WriteLine("simpletorrent: Failed login for {0}...", loginPair[0]);
 
                                     //Sleep to make brute force infeasable
                                     System.Threading.Thread.Sleep(1000);
@@ -802,6 +814,12 @@ namespace simpletorrent
                             }.AddMessage(messages);
                         }
                     }
+                    else if (action == "logout")
+                    {
+                        Console.WriteLine("simpletorrent: Logout succeeded for {0}...", mySession.Username);
+                        mySession.LoggedIn = false;
+                        mySession.Username = null;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -856,6 +874,12 @@ namespace simpletorrent
             public string ID { get; set; }
             public DateTime LastAccessTime { get; set; }
             public IPEndPoint EndPoint { get; set; }
+
+            public void CloseSession()
+            {
+                Console.WriteLine("simpletorrent: Removing expired session for ({0}{1})...", EndPoint.Address,
+                    LoggedIn && Username != null ? "/" + Username : "");
+            }
         }
 
         enum SimpleMessageType
