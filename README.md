@@ -19,6 +19,7 @@ Here is a list of the major libraries or frameworks contained in simpletorrent:
 * [monotorrent](https://github.com/mono/monotorrent) - MIT
 * [uHttpSharp](https://github.com/senditu/uHttpSharp) - LGPLv2
 * [Bouncy Castle](https://github.com/bcgit/bc-csharp) - MIT
+* [NDesk.Options](http://www.ndesk.org/Options) - MIT
 * [jQuery](http://jquery.com/) - MIT
 * [Semantic UI](http://semantic-ui.com/) - MIT
 * [Moment.js](http://momentjs.com/) - MIT
