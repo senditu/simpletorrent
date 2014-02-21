@@ -187,7 +187,7 @@ namespace simpletorrent
 
             // If the SavePath does not exist, we want to create it.
             if (!Directory.Exists(downloadsPath))
-                Directory.CreateDirectory(engine.Settings.SavePath);
+                Directory.CreateDirectory(downloadsPath);
 
             // If the torrentsPath does not exist, we want to create it
             if (!Directory.Exists(torrentsPath))
