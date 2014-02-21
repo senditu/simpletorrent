@@ -196,7 +196,6 @@ namespace simpletorrent
             downloadsPathDrive = null;
             string myRootPath = Path.GetPathRoot(downloadsPath).ToLower();
 
-            //TODO: See how this works on OSX
             if (simpleOperatingSystem == SimpleTorrentOperatingMode.StarNix)
             {
                 System.Diagnostics.Process proc = new System.Diagnostics.Process();
@@ -209,6 +208,24 @@ namespace simpletorrent
                 string output = proc.StandardOutput.ReadToEnd().Trim().ToLower();
                 proc.WaitForExit();
                 
+                if (proc.ExitCode == 0)
+                {
+                    myRootPath = output;
+                    debugWriter.WriteLine("*nix override (bash -c 'df -h <path>') - \"" + output + "\"");
+                }
+            }
+            else if (simpleOperatingSystem == SimpleTorrentOperatingMode.MacOSX)
+            {
+                System.Diagnostics.Process proc = new System.Diagnostics.Process();
+                proc.EnableRaisingEvents = false;
+                proc.StartInfo.FileName = "bash";
+                proc.StartInfo.Arguments = "-c \"df -h " + downloadsPath + " | awk '{print $9}' | tail -1\"";
+                proc.StartInfo.UseShellExecute = false;
+                proc.StartInfo.RedirectStandardOutput = true;
+                proc.Start();
+                string output = proc.StandardOutput.ReadToEnd().Trim().ToLower();
+                proc.WaitForExit();
+
                 if (proc.ExitCode == 0)
                 {
                     myRootPath = output;
