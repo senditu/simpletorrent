@@ -362,8 +362,14 @@ namespace simpletorrent
                     try
                     {
                         TcpListener tl = getTcpListener(ip);
+#if MONO
+                        httpServer.Use(new ListenerSslDecorator(new TcpListenerAdapter(tl), cert, System.Security.Authentication.SslProtocols.Tls));
+#else
                         httpServer.Use(new ListenerSslDecorator(new TcpListenerAdapter(tl), cert, System.Security.Authentication.SslProtocols.Tls11 
                             | System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls));
+#endif
+
+
                         Console.WriteLine("simpletorrent: Listening for HTTPS on {0}...", tl.LocalEndpoint);
                         listeningOne = true;
                     }
