@@ -45,6 +45,16 @@
                                 <span>We seem to be unable to connect to the simpletorrent server.</span>
                             </div>
                         </div>
+                        <div class="ui icon message banner yellow" id="st-notcp" style="display:none">
+                            <i class="icon bolt"></i>
+                            <div class="content">
+                                <div class="header">Have you checked your ports?</div>
+                                <span>
+                                    We haven't been able to confirm any incoming TCP connections to the simpletorrent server.
+                                    Please check your network, and ensure both TCP and UDP connections are allowed and/or properly forwarded.
+                                </span>
+                            </div>
+                        </div>
                     </div>
                     <div class="ui segment">
                         <div style="vertical-align:middle;text-align:center">
@@ -106,7 +116,7 @@
                 <div class="ui icon message st-legal-header">
                     <i class="heart icon"></i>
                     <div class="content">
-                        <div class="header">
+                        <div class="header" id="st-aboutmodal-version">
                             Version 0.41 ('counteraction rising')
                         </div>
                         <p style="margin-bottom:9px">For information, source code, and more please see our website.</p>
@@ -228,8 +238,23 @@
         var lastCheck = new Date();
         var torrentTarget = '';
         var loggedIn = false;
+        var mobile = false;
+        var version = '';
 
         $(document).ready(function () {
+            //Add prototypes
+            if (typeof String.prototype.startsWith != 'function') {
+                // see below for better implementation!
+                String.prototype.startsWith = function (str) {
+                    return this.indexOf(str) == 0;
+                };
+            }
+
+            //Detect if mobile
+            if (/Android|AppleWebKit|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                mobile = true;
+            }
+
             attemptServerPingWithTimeout();
 
             //General Setup
@@ -331,6 +356,8 @@
                     //Only display connection error if it's been 25 sec or longer
                     if (new Date() - lastCheck > 25000) {
                         $('#st-harderror').fadeIn();
+                        $('#st-noudp').fadeOut();
+                        $('#st-notcp').fadeOut();
 
                         $('.st-torrent-general').each(function () {
                             recolorItem($(this).find('.st-progress-parent'), 'black');
@@ -343,6 +370,29 @@
                         setTimeout(attemptServerPingWithTimeout, 5000);
                 }
             });
+        }
+
+        function attemptGetVersion() {            
+            if (version != 'c') {
+                version = 'c';
+
+                $.ajax({
+                    type: "GET",
+                    dataType: "text",
+                    url: "simple-version.potato",
+                    success: function (text) {
+                        if (text.toLowerCase().startsWith('v')) {
+                            version = text;
+                            $('#st-aboutmodal-version').text(text);
+                        } else {
+                            setTimeout(attemptGetVersion, 20000);
+                        }
+                    },
+                    error: function () {
+                        setTimeout(attemptGetVersion, 20000);
+                    }
+                });
+            }
         }
 
         function doLogin() {
@@ -367,6 +417,10 @@
                         $('#st-loginmodal-username').val('');
                         $('#st-loginmodal-password').val('');
 
+                        //get simpletorrent core version
+                        attemptGetVersion();
+
+                        //start update watcher
                         attemptServerPing(true);
                     } else {
                         $('#st-loginmodal-password').val('');
@@ -410,6 +464,12 @@
                 if (!$('#st-generaltags').is(':visible')) {
                     $('#st-generaltags').show();
                 }
+            }
+
+            if ($(xml).find('noincomingtcp').length != 0) {
+                $('#st-notcp').fadeIn();
+            } else {
+                $('#st-notcp').fadeOut();
             }
 
             var dht = $(xml).find('dht').text();
@@ -571,6 +631,13 @@
                         $('#st-deletetorrentmodal').modal('show');
                         $('#st-torrent-' + infohash + ' .st-removetorrent-button').removeClass('active');
                     });
+
+                    //This may be really slow... Might want to leave this out.
+                    /*if (!mobile) {
+                        $('#st-torrent-' + infohash + ' .st-progress').each(function() { 
+                            $(this).parent().addClass('active');
+                        });
+                    }*/
                 }
 
                 var torrent = $('#st-torrent-' + infohash);

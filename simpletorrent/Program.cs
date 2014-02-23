@@ -105,6 +105,7 @@ namespace simpletorrent
         DebugWriter debugWriter;
 
         ClientEngine engine;
+        DhtListener dhtListner;
         List<TorrentManager> torrents;
         List<SimpleMessage> messages;
         SimpleConfiguration config;
@@ -125,7 +126,14 @@ namespace simpletorrent
         int sessionLimit;
         int? seedingLimit;
 
-        readonly string VERSION = "v0.41 ('counteraction rising')";
+        /*
+            v0.41
+                Initial Release
+            v0.42
+                TCP connection checking
+                Pass version to web client properly
+         */
+        readonly string VERSION = "Version 0.42 ('counteraction rising')";
 
         Dictionary<string, TorrentInformation> torrentInformation = new Dictionary<string, TorrentInformation>();
 
@@ -282,7 +290,7 @@ namespace simpletorrent
                 Console.WriteLine("simpletorrent: No existing DHT nodes could be loaded");
             }
 
-            DhtListener dhtListner = new DhtListener(new IPEndPoint(IPAddress.Any, torrentListenPort.Value));
+            dhtListner = new DhtListener(new IPEndPoint(IPAddress.Any, torrentListenPort.Value));
             DhtEngine dht = new DhtEngine(dhtListner);
             engine.RegisterDht(dht);
             dhtListner.Start();
@@ -379,13 +387,16 @@ namespace simpletorrent
                     try
                     {
                         TcpListener tl = getTcpListener(ip);
-#if MONO
-                        httpServer.Use(new ListenerSslDecorator(new TcpListenerAdapter(tl), cert, System.Security.Authentication.SslProtocols.Tls));
-#else
-                        httpServer.Use(new ListenerSslDecorator(new TcpListenerAdapter(tl), cert, System.Security.Authentication.SslProtocols.Tls11 
-                            | System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls));
-#endif
 
+                        //Mono does not support TLS 1.1 or 1.2 -->
+#if MONO
+                        httpServer.Use(new ListenerSslDecorator(new TcpListenerAdapter(tl), cert, System.Security.Authentication.SslProtocols.Ssl3 | 
+                            System.Security.Authentication.SslProtocols.Tls));
+#else
+                        //Force new systems to use TLS 1.1 or 1.2
+                        httpServer.Use(new ListenerSslDecorator(new TcpListenerAdapter(tl), cert, System.Security.Authentication.SslProtocols.Tls11 
+                            | System.Security.Authentication.SslProtocols.Tls12));
+#endif
 
                         Console.WriteLine("simpletorrent: Listening for HTTPS on {0}...", tl.LocalEndpoint);
                         listeningOne = true;
@@ -682,6 +693,18 @@ namespace simpletorrent
 
                 sb.Append(string.Format("<freespace>{0}</freespace>", freeSpace));
 
+                //TODO: Might want to make udp detection more robust later.
+                //For now, we're not including it.
+                if (!dhtListner.HasReceivedMessages)
+                {
+                    sb.Append(string.Format("<noincomingudp/>"));
+                }
+
+                if (!engine.HasAcceptedConnections)
+                {
+                    sb.Append(string.Format("<noincomingtcp/>"));
+                }
+
                 foreach (var manager in engine.Torrents)
                 {
                     var ti = torrentInformation[manager.InfoHash.ToHex()];
@@ -848,6 +871,10 @@ namespace simpletorrent
                 {
                     Console.WriteLine("EXCEPTY: {0}", ex.ToString());
                 }
+            }
+            else if (diskPath == "simple-version.potato")
+            {
+                return new HttpResponse(HttpResponseCode.Ok, VERSION, context.Request.Headers.KeepAliveConnection());
             }
             else
             {

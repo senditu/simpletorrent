@@ -167,6 +167,11 @@ namespace MonoTorrent.Client
             get { return torrentsReadonly; }
         }
 
+        public bool HasAcceptedConnections
+        {
+            get { return listenManager.HasAcceptedConnections; }
+        }
+
         #endregion
 
 

@@ -14,6 +14,16 @@ namespace MonoTorrent.Dht.Listeners
     {
         public event MessageReceived MessageReceived;
 
+        bool _hasReceivedMessages;
+
+        public bool HasReceivedMessages
+        {
+            get
+            {
+                return _hasReceivedMessages;
+            }
+        }
+
         public DhtListener(IPEndPoint endpoint)
             : base(endpoint)
         {
@@ -25,6 +35,8 @@ namespace MonoTorrent.Dht.Listeners
             MessageReceived h = MessageReceived;
             if (h != null)
                 h(buffer, endpoint);
+
+            _hasReceivedMessages = true;
         }
     }
 }

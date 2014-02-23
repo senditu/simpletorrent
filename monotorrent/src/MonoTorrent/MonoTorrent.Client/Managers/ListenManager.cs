@@ -20,9 +20,9 @@ namespace MonoTorrent.Client
         private MonoTorrentCollection<PeerListener> listeners;
         private AsyncCallback endCheckEncryptionCallback;
         private AsyncMessageReceivedCallback handshakeReceivedCallback;
+        private bool _hasAcceptedConnections;
 
         #endregion Member Variables
-
 
         #region Properties
 
@@ -37,6 +37,14 @@ namespace MonoTorrent.Client
             private set { engine = value; }
         }
 
+        public bool HasAcceptedConnections
+        {
+            get
+            {
+                return _hasAcceptedConnections;
+            }
+        }
+
         #endregion Properties
 
 
@@ -48,6 +56,7 @@ namespace MonoTorrent.Client
             listeners = new MonoTorrentCollection<PeerListener>();
             endCheckEncryptionCallback = ClientEngine.MainLoop.Wrap(EndCheckEncryption);
             handshakeReceivedCallback = (a, b, c) => ClientEngine.MainLoop.Queue(() => onPeerHandshakeReceived(a, b, c));
+            _hasAcceptedConnections = false;
         }
 
         #endregion Constructors
@@ -88,6 +97,44 @@ namespace MonoTorrent.Client
 
             if (id.Connection.IsIncoming)
             {
+                if (!_hasAcceptedConnections)
+                {
+                    var ep = ((System.Net.IPEndPoint)id.Connection.EndPoint);
+
+                    System.Net.NetworkInformation.NetworkInterface[] networkInterfaces 
+                        = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces();
+
+                    var found = false;
+
+                    foreach (System.Net.NetworkInformation.NetworkInterface network 
+                        in networkInterfaces)
+                    {
+                        System.Net.NetworkInformation.IPInterfaceProperties properties
+                            = network.GetIPProperties();
+
+                        foreach (System.Net.NetworkInformation.IPAddressInformation address 
+                            in properties.UnicastAddresses)
+                        {
+                            if (address.Address.AddressFamily != AddressFamily.InterNetwork
+                                && address.Address.AddressFamily != AddressFamily.InterNetworkV6)
+                                continue;
+
+                            if (System.Net.IPAddress.IsLoopback(address.Address))
+                                continue;
+
+                            if (address.Address.ToString() == ep.Address.ToString())
+                            {
+                                found = true;
+                            }
+                        }
+                    }
+ 
+                    if (!found)
+                    {
+                        _hasAcceptedConnections = true;
+                    }
+                }
+
                 List<InfoHash> skeys = new List<InfoHash>();
 
                 ClientEngine.MainLoop.QueueWait((MainLoopTask)delegate {
