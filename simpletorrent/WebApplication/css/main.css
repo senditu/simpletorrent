@@ -60,6 +60,8 @@ body {
 #main .st-legal-text { margin-top: 21px; font-size: 0.8em }
 #main .st-legal-header { background-color: #fff; color: #6f6f6f; }
 
+#main .st-torrent-main-button { margin: 2px; }
+
 /*
 ============================
     SEMANTIC OVERRIDES

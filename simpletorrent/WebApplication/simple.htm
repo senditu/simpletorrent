@@ -560,7 +560,7 @@
                             '<div class="bar st-progress" style="width:0%;top:0"></div>' +
                         '</div>' +
                         '<div class="ui attached segment">' +
-                            '<div class="ui right red corner label"><i class="heart icon"></i></div>' +
+                            //'<div class="ui right red corner label"><i class="heart icon"></i></div>' +  //not using this quite yet
                             '<div class="ui teal ribbon label st-name-label">' +
                                 '<div class="ui inline dropdown">' +
                                     '<i class="icon setting" style="vertical-align:middle;margin-right:5px;cursor:pointer"></i>' +
@@ -572,23 +572,23 @@
                                 '<span id="st-torrent-' + infohash + '-name" style="display:none" class="st-name-hidden"></span>' +
                             '</div>' +
                             '<div class="ui basic segment" style="padding: 0">' +
-                                '<div class="ui compact menu" style="margin-left: 1.5rem;">' +
-                                    '<a class="item">' +
+                                '<div style="margin-left:1.8em">' +
+                                    '<div class="ui basic button st-torrent-main-button">' +
                                         '<i class="icon file outline"></i>' +
                                         '<span class="st-filesize"></span>' +
-                                    '</a>' +
-                                    '<a class="item">' +
-                                        '<i class="icon time"></i>' +
-                                        '<span class="st-eta"></span>' +
-                                    '</a>' +
-                                    '<a class="item">' +
-                                        '<i class="icon cloud"></i>' +
-                                        '<span class="st-speed"></span>' +
-                                    '</a>' +
-                                    '<a class="item">' +
+                                    '</div>' +
+                                    '<div class="ui basic button st-torrent-main-button">' +
                                         '<i class="icon heart"></i>' +
                                         'Health: OK' +
-                                    '</a>' +
+                                    '</div>' +
+                                    '<div class="ui basic button st-torrent-main-button">' +
+                                        '<i class="icon time"></i>' +
+                                        '<span class="st-eta"></span>' +
+                                    '</div>' +
+                                    '<div class="ui basic button st-torrent-main-button">' +
+                                        '<i class="icon cloud"></i>' +
+                                        '<span class="st-speed"></span>' +
+                                    '</div>' +
                                 '</div>' +
                             '</div>' +
                             '<div class="ui basic segment" style="padding: 0">' +

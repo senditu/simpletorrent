@@ -676,7 +676,7 @@ namespace simpletorrent
                             context.Request.Headers.KeepAliveConnection());
             }
 
-            if (diskPath == "simple.potato")
+            if (diskPath == "simple.potato" && mySession.LoggedIn)
             {
                 StringBuilder sb = new StringBuilder();
                 sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -753,7 +753,37 @@ namespace simpletorrent
                 return new HttpResponse("text/plain; charset=utf-8", new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString())),
                     context.Request.Headers.KeepAliveConnection());
             }
-            else if (diskPath == "simple-action.potato")
+            else if (diskPath == "simple-files.potato" && mySession.LoggedIn)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+                sb.Append("<simpletorrent>");
+
+                foreach (var torrent in engine.Torrents)
+                {
+                    sb.Append("<torrent infohash=\"" + torrent.InfoHash.ToHex() + "\">");
+
+                    var files = torrent.Torrent.Files.OrderBy(a => a.Path.Contains(Path.DirectorySeparatorChar) ? Path.DirectorySeparatorChar + a.Path : a.Path).ToArray();
+
+                    foreach (var file in files)
+                    {
+                        sb.Append("<file>");
+                        sb.Append(string.Format("<path>{0}</path>", WebUtility.HtmlEncode(file.Path.Contains(Path.DirectorySeparatorChar) ? Path.DirectorySeparatorChar + file.Path : file.Path)));
+                        sb.Append(string.Format("<size>{0}</size>", file.Length));
+                        sb.Append(string.Format("<progress>{0}</progress>", (decimal)file.BytesDownloaded / (decimal)file.Length));
+                        sb.Append(string.Format("<priority>{0}</priority>", WebUtility.HtmlEncode(Enum.GetName(typeof(Priority), file.Priority))));
+                        sb.Append("</file>");
+                    }
+
+                    sb.Append("</torrent>");
+                }
+
+                sb.Append("</simpletorrent>");
+
+                return new HttpResponse("text/plain; charset=utf-8", new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString())),
+                    context.Request.Headers.KeepAliveConnection());
+            }
+            else if (diskPath == "simple-action.potato" && mySession.LoggedIn)
             {
                 try
                 {
@@ -878,8 +908,7 @@ namespace simpletorrent
             }
             else
             {
-                if (diskPath.Trim() == ""
-                    || !File.Exists(Path.Combine(@"web", diskPath)))
+                if (diskPath.Trim() == "")
                 {
                     diskPath = "simple.htm";
                 }
