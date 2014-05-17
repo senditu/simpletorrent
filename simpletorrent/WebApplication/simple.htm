@@ -296,14 +296,20 @@
             $('#st-addtorrenturlmodal')
 				.modal('setting', {
 				    'transition': 'fade up',
+				    onShow: function () {
+				        $('#st-addtorrenturlmodal-textarea').focus();
+				    },
 				    onApprove: function () {
 				        postServerData("add-torrent-links:" + $('#st-addtorrenturlmodal-textarea').val());
 				    },
 				    onHide: function () {
 				        $('#st-addtorrenturlmodal-textarea').val('');
 				    }
-				})
-				.modal('attach events', '#st-addtorrenturlbutton', 'show');
+				});
+
+            $('#st-addtorrenturlbutton').click(function () {
+                $('#st-addtorrenturlmodal').modal('show');
+            });
 
             //Delete Torrent Modal Setup
             $('#st-deletetorrentmodal')

@@ -132,8 +132,10 @@ namespace simpletorrent
             v0.42
                 TCP connection checking
                 Pass version to web client properly
+            v0.43
+                Login bug fixed
          */
-        readonly string VERSION = "Version 0.42 ('counteraction rising')";
+        readonly string VERSION = "Version 0.43 ('counteraction rising')";
 
         Dictionary<string, TorrentInformation> torrentInformation = new Dictionary<string, TorrentInformation>();
 
