@@ -113,6 +113,11 @@ namespace simpletorrent
         System.Timers.Timer seedingLimitTimer; 
         List<Tuple<DateTime, TorrentManager>> seedingLimitTorrents;
 
+        List<string> externalBanList;
+        Dictionary<string, BanList> externalBanLists;
+        int? externalBanListLimit;
+        System.Timers.Timer externalBanListLimitTimer;
+
         string dhtNodeFile;
         string torrentsPath;
         string fastResumeFile;
@@ -134,8 +139,12 @@ namespace simpletorrent
                 Pass version to web client properly
             v0.43
                 Login bug fixed
+            v0.44
+                Bug where torrents wouldn't remove correctly fixed
+            v0.45
+                Added simple peerguardian/iblocklist support
          */
-        readonly string VERSION = "Version 0.43 ('counteraction rising')";
+        readonly string VERSION = "Version 0.45 ('counteraction rising')";
 
         Dictionary<string, TorrentInformation> torrentInformation = new Dictionary<string, TorrentInformation>();
 
@@ -273,6 +282,21 @@ namespace simpletorrent
 
             Console.WriteLine("simpletorrent: TorrentListenPort {0}", torrentListenPort);
 
+            externalBanList = new List<string>();
+            externalBanLists = new Dictionary<string, BanList>();
+            foreach (var i in config.GetValues("ExternalBanList"))
+            {
+                Console.WriteLine("simpletorrent: ExternalBanList {0}", i);
+                externalBanList.Add(i);
+            }
+
+            externalBanListLimit = config.GetValueInt("ExternalBanListLimit");
+
+            if (externalBanListLimit.HasValue)
+            {
+                Console.WriteLine("simpletorrent: ExternalBanListLimit {0}", externalBanListLimit.Value);
+            }
+
             EngineSettings engineSettings = new EngineSettings(downloadsPath, torrentListenPort.Value);
             engineSettings.PreferEncryption = true;
             engineSettings.AllowedEncryption = requireProtocolEncryption ? EncryptionTypes.RC4Full : EncryptionTypes.All;
@@ -351,6 +375,47 @@ namespace simpletorrent
                     }
                 };
                 seedingLimitTimer.Start();
+            }
+
+            //Ban List System
+            UpdateBanLists();
+
+            engine.ConnectionManager.BanPeer += (s, e) =>
+            {
+                bool ban = false;
+
+                lock (externalBanLists)
+                {
+                    foreach (var i in externalBanLists)
+                    {
+                        ban |= i.Value.IsBanned(IPAddress.Parse(e.Peer.ConnectionUri.Host));
+                    }
+                }
+
+                e.BanPeer = ban;
+                
+                if (e.BanPeer)
+                {
+                    debugWriter.WriteLine(string.Format("Connection from {0} denied.", e.Peer.ConnectionUri.Host));
+                }
+                else
+                {
+                    debugWriter.WriteLine(string.Format("Connection from {0} allowed.", e.Peer.ConnectionUri.Host));
+                }
+            };
+
+            if (externalBanListLimit.HasValue)
+            {
+                Console.WriteLine("simpletorrent: Starting external ban list update timer...");
+                externalBanListLimitTimer = new System.Timers.Timer();
+                externalBanListLimitTimer.AutoReset = true;
+                externalBanListLimitTimer.Interval = 1000 * externalBanListLimit.Value;
+                externalBanListLimitTimer.Elapsed += (s, e) =>
+                {
+                    UpdateBanLists();
+                };
+
+                externalBanListLimitTimer.Start();
             }
 
             using (var httpServer = new HttpServer(new HttpRequestProvider()))
@@ -939,6 +1004,81 @@ namespace simpletorrent
             }
 
             return new HttpResponse(HttpResponseCode.Ok, "", context.Request.Headers.KeepAliveConnection());
+        }
+
+        void UpdateBanLists()
+        {
+            foreach (var i in externalBanList)
+            {
+                try
+                {
+                    Console.WriteLine("simpletorrent: Retrieving an external ban list...");
+                    Console.WriteLine("simpletorrent: {0}", i);
+                    var count = 0;
+
+                    HttpWebRequest wr = (HttpWebRequest)HttpWebRequest.Create(i);
+                    wr.Timeout = 10000;
+                    var res = wr.GetResponse();
+                    var stream = new StreamReader(
+                        new System.IO.Compression.GZipStream(
+                            res.GetResponseStream(), System.IO.Compression.CompressionMode.Decompress, true));
+
+                    var colon = new char[] { ':' };
+                    var dash = new char[] { '-' };
+
+                    BanList banList = new BanList();
+
+                    while (stream.Peek() != -1)
+                    {
+                        var line = stream.ReadLine().Trim();
+
+                        /*
+                            # List distributed by iblocklist.com
+
+                            China Internet Information Center (CNNIC):1.2.4.0-1.2.4.255
+                            China Internet Information Center (CNNIC):1.2.8.0-1.2.8.255
+                        */
+
+                        if (line.Length > 0 && !line.StartsWith("#"))
+                        {
+                            try
+                            {
+                                var ips = line.Split(colon, 2)[1].Split(dash, 2);
+                                banList.Add(new AddressRange(IPAddress.Parse(ips[0]), IPAddress.Parse(ips[1])));
+                                count++;
+                                if (count % 50000 == 0)
+                                {
+                                    Console.WriteLine("simpletorrent: {0} entries...", count);
+                                }
+                            }
+                            catch
+                            {
+
+                            }
+                        }
+                    }
+
+                    res.Dispose();
+
+                    lock (externalBanLists)
+                    {
+                        if (!externalBanLists.ContainsKey(i))
+                        {
+                            externalBanLists.Add(i, banList);
+                        }
+                        else
+                        {
+                            externalBanLists[i] = banList;
+                        }
+                    }
+
+                    Console.WriteLine("simpletorrent: Successuflly loaded {0} entries.", count);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("simpletorrent: Error retrieving list ({0})...", ex.Message);
+                }
+            }
         }
 
         void WriteToStream(Stream stream, string s)

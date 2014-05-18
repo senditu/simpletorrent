@@ -36,7 +36,24 @@ namespace MonoTorrent.Client.Tracker
        {
            //LastUpdated = DateTime.Now;
            if (!hasConnected && amConnecting)
+           {
+               if (state is TrackerConnectionID)
+               {
+                   var id = ((TrackerConnectionID)state);
+                   if (id.WaitHandle != null)
+                   {
+                       try
+                       {
+                           id.WaitHandle.Set();
+                       }
+                       catch
+                       {
+
+                       }
+                   }
+               }
                return;
+           }
 
            if (!hasConnected)
            {
@@ -48,11 +65,41 @@ namespace MonoTorrent.Client.Tracker
                catch (SocketException)
                {
                    DoAnnounceComplete(false, state, new List<Peer>());
+                   if (state is TrackerConnectionID)
+                   {
+                       var id = ((TrackerConnectionID)state);
+                       if (id.WaitHandle != null)
+                       {
+                           try
+                           {
+                               id.WaitHandle.Set();
+                           }
+                           catch
+                           {
+
+                           }
+                       }
+                   }
                    return;
                }               
            }
            else
                DoAnnounce(parameters, state);
+
+           if (state is TrackerConnectionID)
+           {
+               var id = ((TrackerConnectionID)state);
+               if (id.WaitHandle != null)
+               {
+                   try
+                   {
+                       id.WaitHandle.Set();
+                   }
+                   catch
+                   { 
+                   }
+               }
+           }
        }
 
        private void DoAnnounce(AnnounceParameters parameters, object state)

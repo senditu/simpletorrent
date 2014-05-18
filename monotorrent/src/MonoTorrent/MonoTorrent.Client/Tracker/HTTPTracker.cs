@@ -96,6 +96,22 @@ namespace MonoTorrent.Client.Tracker
                 FailureMessage = ("Could not initiate announce request: " + ex.Message);
                 RaiseAnnounceComplete(new AnnounceResponseEventArgs(this, state, false));
             }
+
+            if (state is TrackerConnectionID)
+            {
+                var id = ((TrackerConnectionID)state);
+                if (id.WaitHandle != null)
+                {
+                    try
+                    {
+                        id.WaitHandle.Set();
+                    }
+                    catch
+                    {
+
+                    }
+                }
+            }
         }
 
         void BeginRequest(WebRequest request, AsyncCallback callback, object state)
